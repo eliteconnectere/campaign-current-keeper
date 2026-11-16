@@ -1115,8 +1115,8 @@ function Workspace() {
         if (cloud.snapshot) {
           snapshot = { ...cloud.snapshot, campaignRuns: localSnapshot?.campaignRuns, sentRecipientEmails: localSnapshot?.sentRecipientEmails } as Partial<WorkspaceSnapshot>;
           const cloudPayload = { ...cloud.snapshot } as Record<string, unknown>;
-          delete cloudPayload.campaignRuns;
-          delete cloudPayload.sentRecipientEmails;
+          delete cloudPayload["campaignRuns"];
+          delete cloudPayload["sentRecipientEmails"];
           cloudWorkspaceLastPayloadRef.current = JSON.stringify(cloudPayload);
           saveWorkspace(snapshot as WorkspaceSnapshot, uid);
         } else if (localSnapshot) {
@@ -1125,8 +1125,8 @@ function Workspace() {
           if (migrated.ok) {
             cloudWorkspaceRevisionRef.current = migrated.revision;
             const cloudPayload = { ...localSnapshot } as Record<string, unknown>;
-            delete cloudPayload.campaignRuns;
-            delete cloudPayload.sentRecipientEmails;
+            delete cloudPayload["campaignRuns"];
+            delete cloudPayload["sentRecipientEmails"];
             cloudWorkspaceLastPayloadRef.current = JSON.stringify(cloudPayload);
           } else cloudWorkspaceConflictRef.current = true;
         }
@@ -1153,7 +1153,7 @@ function Workspace() {
           const resumable = restoredRuns.find((run) => run.status === 'running' || run.status === 'paused');
           if (resumeRequested && resumable) {
             activeCampaignIdRef.current = resumable.id;
-            setCampaignRuns((previous) => previous.map((run) => run.id === resumable.id ? { ...run, status: 'paused' as const, finishedAt: undefined } : run));
+            setCampaignRuns((previous) => previous.map((run) => run.id === resumable.id ? (({ finishedAt: _f, ...rest }) => ({ ...rest, status: 'paused' as const }))(run) : run));
             setEngine('paused');
             setAutoResumePending(true);
             try { localStorage.setItem(campaignResumeKey(uid), '1'); localStorage.removeItem('ec-engine-resume'); } catch {}
@@ -1191,7 +1191,7 @@ function Workspace() {
         const { getMyCompanyNotifications, markMyCompanyNotificationsRead } = await import("@/lib/company-team.functions");
         const notices = await getMyCompanyNotifications();
         if (cancelled) return;
-        const unread = notices.filter((notice) => !notice.read_at);
+        const unread = notices.filter((notice: { read_at?: string | null }) => !notice.read_at);
         for (const notice of unread) toast.info(notice.title, { description: notice.body, duration: 8000 });
         if (unread.length) await markMyCompanyNotificationsRead();
       } catch (error) {

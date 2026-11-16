@@ -28,8 +28,8 @@ export const saveWorkspaceSnapshot = createServerFn({ method: "POST" })
     const snapshot: Record<string, unknown> = { ...(input.snapshot as Record<string, unknown>) };
     // Campaign execution is server-authoritative. Never sync a local running
     // state or local sent ledger across devices and accidentally restart work.
-    delete snapshot.campaignRuns;
-    delete snapshot.sentRecipientEmails;
+    delete snapshot["campaignRuns"];
+    delete snapshot["sentRecipientEmails"];
     const serialized = JSON.stringify(snapshot);
     if (serialized.length > 1_500_000) throw new Error("Workspace is too large to sync. Remove large imported lists and try again.");
     return { snapshot, expectedRevision: Math.max(0, Math.floor(Number(input.expectedRevision ?? 0))) };

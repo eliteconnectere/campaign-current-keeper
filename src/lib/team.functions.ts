@@ -42,7 +42,7 @@ export const listMyTeamSeats = createServerFn({ method: "POST" })
       const { data: ownerUser } = await supabaseAdmin.auth.admin.getUserById(membership.owner_user_id);
       ownerEmail = ownerUser?.user?.email ?? null;
       const metadata = (ownerUser?.user?.user_metadata ?? {}) as Record<string, unknown>;
-      const displayName = [metadata.full_name, metadata.name, metadata.display_name, metadata.given_name]
+      const displayName = [metadata["full_name"], metadata["name"], metadata["display_name"], metadata["given_name"]]
         .find((value) => typeof value === "string" && value.trim());
       ownerName = typeof displayName === "string" ? displayName.trim() : null;
     }
