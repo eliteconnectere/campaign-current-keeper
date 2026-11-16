@@ -1,0 +1,41 @@
+name: EMERGENCY Unblock Rex Bloodline Workspace Actions
+on:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-UNBLOCK-BLOODLINE.yml'
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove over-restrictive Bloodline blocks
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("src/lib/assist.functions.ts")
+          t = p.read_text()
+          start = t.find("const needsPromoCheck = Boolean(")
+          end = t.find("const allowedDestinations = new Set([", start)
+          if start < 0 or end < 0:
+              raise SystemExit(f"markers not found start={start} end={end}")
+          replacement = '''const needsPromoCheck = Boolean(updateWorkspaceSettingCall);
+      const communityPromoOnly = needsPromoCheck ? await isCommunityPromoAccount(rexWorkspace.userId) : false;
+      // Bloodline no longer blocks template write, validate, prepare, planner, Smart Fill, or Private Chat reads.
+      // Only Night Mode / Studio settings remain gated below. If the owner can do an action in the UI, Rex can do it.
+
+      '''
+          t = t[:start] + replacement + t[end:]
+          p.write_text(t)
+          print("patched", p.stat().st_size)
+          if "Campaign sending, Private Chat, Planner, and Smart Fill require" in t:
+              raise SystemExit("old block text still present")
+          PY
+          git add src/lib/assist.functions.ts
+          git commit -m "Fix: Bloodline no longer blocks template write, validate, planner, Smart Fill — only Night Mode/Studio gated" || exit 0
+          git push origin HEAD:main

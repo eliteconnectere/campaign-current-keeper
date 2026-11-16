@@ -1,0 +1,2 @@
+ALTER TABLE public.gmail_connect_attempts ADD COLUMN IF NOT EXISTS redirect_uri text;
+UPDATE public.gmail_connect_attempts SET status = 'expired' WHERE status = 'pending' AND created_at < now() - interval '20 minutes';

@@ -1,0 +1,221 @@
+name: Fix DNS Standard Mode v2
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Diagnose and patch
+        run: |
+          python3 << 'PY'
+          import re, os
+
+          path = "src/routes/app.tsx"
+          text = open(path, encoding="utf-8").read()
+          print("=== DIAGNOSE ===")
+          print("async async:", "async async function validate" in text)
+          print("sendRiskyViaStandard:", "sendRiskyViaStandard" in text)
+          print("enrichWithDomainScan:", "enrichWithDomainScan" in text)
+          for m in re.finditer(r".{0,40}function validate\(\).{0,80}", text):
+              print("validate snippet:", repr(m.group(0)[:120]))
+          for m in re.finditer(r".{0,20}function removeCategory.{0,60}", text):
+              print("removeCategory snippet:", repr(m.group(0)[:100]))
+          for m in re.finditer(r"confirming\?\.kind === \"cleanup\"", text):
+              print("cleanup modal at", m.start())
+
+          # 1. Fix double async
+          if "async async function validate()" in text:
+              text = text.replace("async async function validate()", "async function validate()")
+              print("FIXED: async async")
+
+          # 2. Ensure validate is async
+          text2 = re.sub(r"(?<!async )function validate\(\)", "async function validate()", text, count=1)
+          if text2 != text:
+              print("Made validate async")
+              text = text2
+
+          # 3. Add toast around enrichWithDomainScan if missing
+          if "Verifying domains via DNS" not in text and "Checking domain mail servers" not in text:
+              # after parseList assignment patterns
+              patterns = [
+                  (
+                      r"(const parsed = raw\.trim\(\) \? parseList\(raw\) : recipients;\s*\n\s*)(const list = await enrichWithDomainScan\(parsed\);)",
+                      r'''\1const toastId = toast.loading("Verifying domains via DNS/MX...");
+    let list = parsed;
+    try {
+      list = await enrichWithDomainScan(parsed);
+    } finally {
+      toast.dismiss(toastId);
+    }''',
+                  ),
+                  (
+                      r"(const list = await enrichWithDomainScan\(parsed\);)",
+                      r'''const toastId = toast.loading("Verifying domains via DNS/MX...");
+    let list = parsed;
+    try {
+      list = await enrichWithDomainScan(parsed);
+    } finally {
+      toast.dismiss(toastId);
+    }''',
+                  ),
+              ]
+              for pat, rep in patterns:
+                  if re.search(pat, text):
+                      text = re.sub(pat, rep, text, count=1)
+                      print("Added DNS toast around enrichWithDomainScan")
+                      break
+              else:
+                  print("WARN: could not wire toast")
+
+          # 4. Add sendRiskyViaStandard before removeCategory
+          if "function sendRiskyViaStandard" not in text:
+              anchor = None
+              for candidate in [
+                  'function removeCategory(kind: "duplicate" | "risky") {',
+                  "function removeCategory(kind: \"duplicate\" | \"risky\") {",
+              ]:
+                  if candidate in text:
+                      anchor = candidate
+                      break
+              # flexible regex anchor
+              m = re.search(r"function removeCategory\(kind:[^{]+\)\s*\{", text)
+              if m:
+                  fn = '''  function sendRiskyViaStandard() {
+    const riskyRecipients = recipients.filter((r) => r.status === "risky");
+    if (riskyRecipients.length === 0) {
+      toast.info("No risky recipients found.");
+      return;
+    }
+    switchMode("standard");
+    setRecipients(riskyRecipients);
+    const nextGen = buildGenerated(riskyRecipients);
+    setGenerated(nextGen);
+    generatedRef.current = nextGen;
+    setFrom(1);
+    setTo(riskyRecipients.length);
+    setTab("risky");
+    setCleanupHandled(true);
+    setConfirming(null);
+    log(`Queued ${riskyRecipients.length} risky recipients in Standard Mode (Mailto) — protects Elite Gmail reputation`);
+    toast.success("Switched to Standard Mode", {
+      description: `Loaded ${riskyRecipients.length} unverified address(es). Send safely via mailto without risking connected Gmail accounts.`,
+    });
+  }
+
+  '''
+                  text = text[: m.start()] + fn + text[m.start() :]
+                  print("Added sendRiskyViaStandard")
+              else:
+                  print("WARN: removeCategory not found")
+          else:
+              print("sendRiskyViaStandard already present")
+
+          # 5. Banner near long-press note
+          if "Send Standard" not in text:
+              note = re.search(
+                  r"Press and hold Duplicate or Risky to remove that whole group\.\s*</p>\s*\)",
+                  text,
+              )
+              if note:
+                  banner = '''
+            {counts.risky > 0 && (
+              <div className="mt-2 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-[11.5px] text-amber-900">
+                <span className="leading-tight">
+                  <strong>{counts.risky} Risky Address(es)</strong>: protect your Gmail reputation by sending these via Standard Mode.
+                </span>
+                <button
+                  type="button"
+                  onClick={sendRiskyViaStandard}
+                  className="ml-2 shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-amber-700"
+                >
+                  Send Standard
+                </button>
+              </div>
+            )}'''
+                  # insert after the closing of that conditional block is hard; insert after the note match
+                  insert_at = note.end()
+                  text = text[:insert_at] + banner + text[insert_at:]
+                  print("Added Send Standard banner")
+              else:
+                  print("WARN: long-press note not found for banner")
+          else:
+              print("Send Standard banner already present")
+
+          # 6. Soft-replace Confirm cleanup if still old Confirm
+          if 'confirming?.kind === "cleanup"' in text and "List Hygiene & Reputation" not in text:
+              # try to replace Confirm block - use non-greedy from confirming cleanup to next Confirm close
+              pat = r"\{confirming\?\.kind === \"cleanup\" && \(\s*<Confirm[\s\S]*?</Confirm>\s*\)\}"
+              new_modal = '''{confirming?.kind === "cleanup" && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 px-6">
+          <div className="w-full max-w-[340px] animate-scale-in rounded-2xl border border-line bg-white p-5 shadow-[0_18px_44px_-26px_oklch(0.31_0.128_268/40%)]">
+            <p className="text-[14px] font-semibold text-ink">List Hygiene & Reputation</p>
+            <p className="mt-1.5 text-[12px] leading-snug text-ink-soft">
+              Found {confirming.duplicate > 0 ? `${confirming.duplicate} duplicate(s)` : ""}{confirming.duplicate > 0 && confirming.risky > 0 ? " and " : ""}{confirming.risky > 0 ? `${confirming.risky} unverified/risky domain(s)` : ""}.
+            </p>
+            <p className="mt-2 text-[11px] leading-snug text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+              Sending risky emails through Elite Engine can hurt your connected Gmail sender score. Route them to Standard Mode (Mailto) instead to protect your accounts.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              {confirming.risky > 0 && (
+                <button type="button" onClick={sendRiskyViaStandard} className="w-full rounded-full bg-brand py-2 text-[12px] font-semibold text-white shadow-xs hover:opacity-90">
+                  Send Risky in Standard Mode ({confirming.risky})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  removeStatuses(["duplicate", "risky"]);
+                  setCleanupHandled(true);
+                  setConfirming(null);
+                  log("Removed duplicate & risky recipients — sending safe valid contacts");
+                  setEngine("sending");
+                  setScout(true);
+                }}
+                className="w-full rounded-full border border-line bg-soft py-2 text-[12px] font-semibold text-ink hover:bg-neutral-100"
+              >
+                Remove Them & Send Safe Only
+              </button>
+              <button type="button" onClick={() => setConfirming(null)} className="w-full py-1 text-[11.5px] font-medium text-ink-soft hover:text-ink">
+                Review List First
+              </button>
+            </div>
+          </div>
+        </div>
+      )}'''
+              text2, n = re.subn(pat, new_modal, text, count=1)
+              if n:
+                  text = text2
+                  print("Replaced cleanup Confirm with 3-way modal")
+              else:
+                  print("WARN: cleanup Confirm regex did not match")
+          else:
+              if "List Hygiene & Reputation" in text:
+                  print("Hygiene modal already present")
+
+          open(path, "w", encoding="utf-8").write(text)
+
+          # data.ts smart fill - use .invalid/.test not fake .xyz at real-looking hosts
+          dpath = "src/features/data.ts"
+          if os.path.exists(dpath):
+              d = open(dpath, encoding="utf-8").read()
+              d2 = d
+              # prefer safer demo domains
+              d2 = d2.replace('["fake-dead-domain.xyz", "DeadMail"]', '["demo-mockdomain.test", "TestCorp"]')
+              d2 = d2.replace('["icloud.com", "Apple"],', '')  # optional: keep or drop
+              if d2 != d:
+                  open(dpath, "w", encoding="utf-8").write(d2)
+                  print("Adjusted Smart Fill domains")
+
+          print("DONE")
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v2: Send Risky via Standard Mode + DNS toast (flexible match)" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,22 @@
+name: EMERGENCY Input Grow
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-INPUT-GROW.yml'
+      - 'scripts/fix_chat_input_grow.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_chat_input_grow.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "UX: Rex and private chat inputs grow up to ~5 lines" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,21 @@
+name: Vault Menu + Brand Colors
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/fix-vault-colors-menu.py'
+      - '.github/workflows/fix-vault-colors-menu.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix-vault-colors-menu.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "UI: Quarantine Vault in Settings; brand red/blue/white only (no amber)" || exit 0
+          git push origin HEAD:main

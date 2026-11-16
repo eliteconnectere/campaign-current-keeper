@@ -1,0 +1,21 @@
+name: Fix Send Prompts UX
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-send-prompts.yml'
+      - 'scripts/fix-send-prompts.py'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix-send-prompts.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "ux: no hygiene popup on send; Standard Mode offer only after Elite finishes" || exit 0
+          git push origin HEAD:main

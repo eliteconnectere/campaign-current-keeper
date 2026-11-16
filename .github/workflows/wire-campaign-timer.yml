@@ -1,0 +1,22 @@
+name: Wire Campaign Timer
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/wire-campaign-timer.py'
+      - '.github/workflows/wire-campaign-timer.yml'
+      - 'src/features/campaign/CampaignTimerChip.tsx'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/wire-campaign-timer.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "feat: show campaign ETA timer beside Promo while sending" || exit 0
+          git push origin HEAD:main

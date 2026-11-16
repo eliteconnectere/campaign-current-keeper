@@ -1,0 +1,47 @@
+name: Hide Team Seats Menu
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/hide-team-seats-menu.py'
+      - '.github/workflows/hide-team-seats-menu.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/hide-team-seats-menu.py
+      - name: Restore Standard mode hides crown + hide Team seats leftover
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          p = Path("src/routes/app.tsx")
+          t = p.read_text(encoding="utf-8")
+          # Crown ONLY outside Standard (Elite Engine)
+          t2 = t.replace(
+              "{signedIn && !chatOpen && !radarOpen && (",
+              '{signedIn && mode !== "standard" && !chatOpen && !radarOpen && (',
+          )
+          if t2 != t:
+              t = t2
+              print("crown hidden on standard")
+          else:
+              # already gated or different
+              if 'mode !== "standard"' in t or 'mode === "elite"' in t:
+                  print("crown gate already present")
+              else:
+                  print("WARN crown gate")
+          # Strip remaining Team seats label lines in settings
+          t = t.replace('label="Team seats"', 'label="Assistants" style={{display:"none"}} data-hidden="team"')
+          p.write_text(t, encoding="utf-8")
+          print("ok")
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: Promo stays open; hide Team seats in settings; no crown on Standard" || exit 0
+          git push origin HEAD:main

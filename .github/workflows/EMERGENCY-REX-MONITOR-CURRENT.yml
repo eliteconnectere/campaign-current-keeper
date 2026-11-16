@@ -1,0 +1,22 @@
+name: EMERGENCY Rex Monitor Current
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-REX-MONITOR-CURRENT.yml'
+      - 'scripts/fix_rex_monitor_current_only.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_rex_monitor_current_only.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Rex Monitor: current campaign only, purpose, schedule note, route" || exit 0
+          git push origin HEAD:main

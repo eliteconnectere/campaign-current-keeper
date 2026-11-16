@@ -1,0 +1,29 @@
+name: EMERGENCY Restore App
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-RESTORE.yml'
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore app.tsx
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git show e49524a6193c547098bdc1ca9705c62d55084136:src/routes/app.tsx > src/routes/app.tsx
+          wc -l src/routes/app.tsx
+          head -3 src/routes/app.tsx
+          # must not be PLACEHOLDER
+          if grep -q PLACEHOLDER src/routes/app.tsx; then echo FAIL; exit 1; fi
+          test $(wc -l < src/routes/app.tsx) -gt 3000
+          git add src/routes/app.tsx
+          git commit -m "EMERGENCY: restore full app.tsx from e49524a" || exit 0
+          git push origin HEAD:main

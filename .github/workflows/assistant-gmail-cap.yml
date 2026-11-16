@@ -1,0 +1,21 @@
+name: Assistant Gmail Cap
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/assistant-gmail-cap.yml'
+      - 'scripts/assistant-gmail-cap.py'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/assistant-gmail-cap.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: enforce per-assistant Gmail connect limit" || exit 0
+          git push origin HEAD:main

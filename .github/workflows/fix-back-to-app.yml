@@ -1,0 +1,21 @@
+name: Fix Back Links to Workspace
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/fix-back-to-app.py'
+      - '.github/workflows/fix-back-to-app.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix-back-to-app.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/privacy.tsx src/routes/terms.tsx src/routes/learn-more.tsx src/features/review/ReviewPages.tsx || true
+          git commit -m "fix: Back to app links open /app workspace, not homepage" || exit 0
+          git push origin HEAD:main

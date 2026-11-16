@@ -1,0 +1,23 @@
+name: Hundred Percent Rex Nav Settings
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/HUNDRED_PCT_rex_nav_settings.py'
+      - '.github/workflows/HUNDRED-PCT-REX.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/HUNDRED_PCT_rex_nav_settings.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "Feat: Smart Fill nav IDs, max/min settings, RexAvatar on FAB, disambiguation"
+          git push origin HEAD:main

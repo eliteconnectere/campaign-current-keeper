@@ -1,0 +1,25 @@
+name: Restore GamesHub History
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore-from-history.yml'
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore last good GamesHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout b532fa0387cfb11ad6ea6b3df0c07fd32f97447b -- src/features/games/GamesHub.tsx || true
+          # If missing, leave
+          wc -c src/features/games/GamesHub.tsx || true
+          git add src/features/games/GamesHub.tsx
+          git commit -m "restore GamesHub from b532fa0 (fullscreen center)" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,64 @@
+name: Join PrivateChat
+on:
+  push:
+    paths:
+      - 'scripts/pc_chunks/**'
+      - 'scripts/JOIN_PRIVATECHAT.py'
+      - '.github/workflows/JOIN-PRIVATECHAT.yml'
+  workflow_dispatch:
+jobs:
+  join:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prefer git history restore if chunks missing
+        run: |
+          if [ ! -f scripts/pc_chunks/part_0.txt ]; then
+            git show 54ae078be5b4a25cc197bdcd7620b0e9fb952126:src/features/chat/PrivateChat.tsx > src/features/chat/PrivateChat.tsx
+            echo "restored from git history"
+          else
+            python3 scripts/JOIN_PRIVATECHAT.py
+          fi
+      - name: Wire app settings + onOpenRex
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          p = Path("src/routes/app.tsx")
+          t = p.read_text()
+          t = t.replace('try { showPanelTip("settings"); } catch {}', "/* settings open: no forced tip */")
+          for m in list(re.finditer(r'setMenuView\("settings"\);', t))[::-1]:
+              after = t[m.end():m.end()+80]
+              if "scrollRexDestination" in after:
+                  continue
+              t = t[:m.start()] + 'setMenuView("settings"); try { window.setTimeout(() => scrollRexDestination(), 0); } catch {}' + t[m.end():]
+          if "onOpenRex=" not in t and "<PrivateChat" in t:
+              t = t.replace("<PrivateChat", "<PrivateChat\n            onOpenRex={() => { setChatOpen(false); setAssistOpen(true); }}", 1)
+          # Ensure PrivateChat has fab if restored from history without fab
+          pc = Path("src/features/chat/PrivateChat.tsx")
+          pt = pc.read_text()
+          if "data-ec-rex-chat-fab" not in pt:
+              needle = "<Home hub={hub} onClose={onClose} onOpen={(cid, partner) => setActive({ cid, partner })} />"
+              if needle in pt:
+                  pt = pt.replace(needle, needle + '''\n      {typeof onOpenRex === "function" ? (\n        <button type="button" data-ec-rex-chat-fab="" aria-label="Open Rex" onClick={onOpenRex}\n          className="fixed bottom-24 right-4 z-[200] grid size-14 place-items-center rounded-full bg-brand text-white shadow-2xl ring-2 ring-white/40">\n          <span className="text-lg font-bold leading-none">R</span>\n        </button>\n      ) : null}''', 1)
+              if "onOpenRex?" not in pt and "onOpenRex," not in pt:
+                  pt = pt.replace("onUpgrade,\n}: {", "onUpgrade,\n  onOpenRex,\n}: {", 1)
+                  pt = pt.replace("onUpgrade: () => void;\n}) {", "onUpgrade: () => void;\n  onOpenRex?: () => void;\n}) {", 1)
+              pc.write_text(pt)
+              print("fab injected")
+          p.write_text(t)
+          print("done")
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git status
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "EMERGENCY: restore PrivateChat, Rex FAB in chat, settings scroll top"
+          git push origin HEAD:main

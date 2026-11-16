@@ -1,0 +1,21 @@
+name: Fix JSX Build Final
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/fix-jsx-build-final.py'
+      - '.github/workflows/fix-jsx-build-final.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix-jsx-build-final.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "fix: JSX build — PSP handlers + Assistants row + Promo" || exit 0
+          git push origin HEAD:main

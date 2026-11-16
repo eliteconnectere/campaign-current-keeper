@@ -1,0 +1,45 @@
+name: Wire Domain Scan and Standard Mode Fallback
+on: workflow_dispatch
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.tsx
+        run: |
+          node -e '
+          const fs = require("fs");
+          const file = "src/routes/app.tsx";
+          let code = fs.readFileSync(file, "utf8");
+
+          // 1. Ensure validate() is async and awaits enrichWithDomainScan
+          const oldValidate = "function validate() {\n    if (typeof navigator !== \"undefined\" && !navigator.onLine)";
+          const newValidate = "async function validate() {\n    if (typeof navigator !== \"undefined\" && !navigator.onLine)";
+          if (code.includes(oldValidate)) {
+            code = code.replace(oldValidate, newValidate);
+            console.log("✓ validate() made async");
+          } else {
+            console.log("⚠ old validate() signature not found (may already be async)");
+          }
+
+          // 2. Wire enrichWithDomainScan call
+          const oldParse = "const list = raw.trim() ? parseList(raw) : recipients;";
+          const newParse = "const parsed = raw.trim() ? parseList(raw) : recipients;\n    const list = await enrichWithDomainScan(parsed);";
+          if (code.includes(oldParse) && !code.includes("await enrichWithDomainScan(parsed)")) {
+            code = code.replace(oldParse, newParse);
+            console.log("✓ Wired real domain scan into validate()");
+          } else if (code.includes("await enrichWithDomainScan")) {
+            console.log("✓ domain scan already wired");
+          } else {
+            console.log("⚠ parseList pattern not found — check app.tsx manually");
+          }
+
+          fs.writeFileSync(file, code, "utf8");
+          '
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "Wire async domain MX scan into validate button" || exit 0
+          git push origin HEAD:main

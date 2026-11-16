@@ -1,0 +1,30 @@
+# Roadmap
+- [ ] Activate preserved dual-mode CRM, mandatory consent, notices, guidelines link; verify and publish.
+- [x] Phase 1a/3: plans, send log, 24HR, alerts, Paystack, confetti
+- [x] Customization Studio, PWA/offline, Plan 3 target edit
+- [x] Supabase connected; Gmail + Paystack credentials saved
+- [x] Direct Google Gmail connect (no gateway), isolated from Master Login
+- [x] Targeted upgrade modals (Plan1→2+3, Plan2/locked→3), 30-day plans
+- [x] Hand-gesture tour with Skip / Do not show again
+- [x] Erase Data: disconnects profiles, clears local data, keeps login + plan, server daily counts kept, tour resets
+- [x] Plan 3 confetti + balloons only on verified payment
+- [x] Install prompt (Android button, iOS Share instructions)
+- [ ] Custom logo/icons — waiting on user to upload the logo
+- [ ] Onboarding video, Tracker History, Valid/Duplicate/Risky, ads, chat/Magic Circle
+- [x] Gmail connect saves server-side from the popup (no reliance on opener messaging)
+- [x] Audit: confirm Gmail connect never overwrites Master session; Paystack uses Master only
+- [x] Gmail panel: connected account, Reconnect when expired, Test send
+- [ ] Google review mode ON — restore (set flag false) only when user says "Google has approved the app."
+- [ ] Friend chat: 2-hour allowance with 10%/hour recharge, blocking, conversation delete
+- [x] Elite Assist support assistant (crown → Chat / Elite Assist / Settings)
+- [x] Contextual Elite Engine guide replaces forced first-login tour
+- [x] Pre-campaign 3–5s warning + /learn-more page
+- [x] Delay measured between send starts (1s ≈ 1s)
+- [x] Share image + canonical on eliteconnectere.site
+- [ ] Restore removed features — waiting on user to name which ones
+- [x] Single-send lock: each recipient sent once; Reset keeps sent recipients locked
+- [x] Gmail status (Connected / Access expired) + one-click Reconnect
+- [x] Elite Assist "Do you want me to show you exactly?" → guided step
+- [x] Step-by-step guide rebuilt (skips finished steps, scrolls to spot)
+- [x] Oct 2026 fresh start: Gmail profiles, attempts, send log erased; local data cleared once
+- [ ] Elite Assist on Vercel — needs an AI key set in Vercel by the user

@@ -1,0 +1,23 @@
+name: Restore Full Workspace
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/restore-workspace.yml'
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Checkout app.tsx from history and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout 92660955be163be561d29e4a5bf9c931dce72251 -- src/routes/app.tsx
+          git add src/routes/app.tsx
+          git commit -m "Restore 3,384-line app.tsx from commit 9266095" || exit 0
+          git push origin HEAD:main

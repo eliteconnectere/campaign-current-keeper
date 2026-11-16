@@ -1,0 +1,22 @@
+name: EMERGENCY Rex Time Context
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-REX-TIME.yml'
+      - 'scripts/fix_rex_time_context.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_rex_time_context.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Rex: inject server clock + campaign ETA guidance" || exit 0
+          git push origin HEAD:main

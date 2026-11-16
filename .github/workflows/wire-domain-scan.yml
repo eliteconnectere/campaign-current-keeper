@@ -1,0 +1,30 @@
+name: Wire Domain Scan
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/wire-domain-scan.mjs'
+      - 'src/lib/domainScan.functions.ts'
+      - '.github/workflows/wire-domain-scan.yml'
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Show parseList usage then wire
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "=== parseList call sites ==="
+          grep -n "parseList" src/routes/app.tsx | head -40 || true
+          node scripts/wire-domain-scan.mjs
+          git add src/routes/app.tsx src/lib/domainScan.functions.ts
+          git commit -m "Wire real domain scan (MX/DNS) into list validation" || exit 0
+          git push origin HEAD:main

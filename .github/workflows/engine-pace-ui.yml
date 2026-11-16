@@ -1,0 +1,21 @@
+name: Engine Pace UI File
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/engine-pace-ui-file.py'
+      - '.github/workflows/engine-pace-ui.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/engine-pace-ui-file.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: wall-clock Engine delay, Next in Xs, list file import" || exit 0
+          git push origin HEAD:main

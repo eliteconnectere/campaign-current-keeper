@@ -1,0 +1,23 @@
+name: Hundred Percent Nav Settings
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/HUNDRED_PERCENT_nav_settings_rex.py'
+      - '.github/workflows/HUNDRED-PERCENT-NAV.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/HUNDRED_PERCENT_nav_settings_rex.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "Toward 100%: Smart Fill vs Studio, NL max settings, RexAvatar menu/FAB, suggestion context"
+          git push origin HEAD:main

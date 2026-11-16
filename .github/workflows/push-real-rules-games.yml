@@ -1,0 +1,32 @@
+name: Push Real Rules Games
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/gameparts/**'
+      - '.github/workflows/push-real-rules-games.yml'
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build GamesHub
+        run: |
+          python3 << 'END'
+          import base64, pathlib
+          parts = sorted(pathlib.Path("scripts/gameparts").glob("gp*"))
+          assert parts, "no parts"
+          b64 = "".join(p.read_text().strip() for p in parts)
+          pathlib.Path("src/features/games").mkdir(parents=True, exist_ok=True)
+          data = base64.b64decode(b64)
+          pathlib.Path("src/features/games/GamesHub.tsx").write_bytes(data)
+          print("wrote", len(data))
+          END
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/features/games/GamesHub.tsx
+          git commit -m "Games: real rules Ludo Draughts Ayo Whot + CPU + specials" || exit 0
+          git push origin HEAD:main

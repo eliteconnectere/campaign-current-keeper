@@ -1,0 +1,139 @@
+import { toast } from "sonner";
+import { Studio, TargetValue } from "@/features/settings/Studio";
+import { FeatureStudios } from "@/features/settings/FeatureStudios";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { connectGmailAccount } from "@/lib/gmailConnect";
+import {
+  disconnectGmailProfile,
+  listGmailProfiles,
+  setGmailTarget,
+  sendGmailMessage,
+  testGmailProfile,
+  type GmailProfile,
+} from "@/lib/gmail.functions";
+import {
+  Bell,
+  Menu,
+  Mail,
+  Send,
+  Zap,
+  Lock,
+  ShieldCheck,
+  MailCheck,
+  Sparkles,
+  Pencil,
+  ListChecks,
+  Eraser,
+  Shuffle,
+  FileText,
+  Info,
+  XCircle,
+  AlertTriangle,
+  Rocket,
+  ExternalLink,
+  Timer,
+  ChevronDown,
+  ChevronUp,
+  Plus,
+  Server,
+  CheckCircle2,
+  Pause,
+  X,
+  Settings,
+  MessageCircle,
+  RotateCcw,
+  Gauge,
+  ScrollText,
+  NotebookPen,
+  Trash2,
+  ChevronLeft,
+  Download,
+  Database,
+  LogOut,
+  Target,
+  History,
+  Copy,
+  Globe,
+  Youtube,
+  Instagram,
+  Facebook,
+  Volume2,
+  Search,
+} from "lucide-react";
+import {
+  buildSmartFill,
+  fill,
+  parseList,
+  type Generated,
+  type Recipient,
+  type Status,
+} from "@/features/data";
+import {
+  clearWorkspaceStorage,
+  loadWorkspace,
+  readOnboarding,
+  saveWorkspace,
+  writeOnboarding,
+  TERMS_VERSION,
+  type CampaignDay,
+  type PlannerItem,
+  type SmartFillSet,
+  type WorkspaceSnapshot,
+} from "@/features/workspace/persist";
+import { useLongPress } from "@/features/workspace/useLongPress";
+import { Onboarding } from "@/features/workspace/Onboarding";
+import { EliteTips, ELITE_TIPS, resetTour } from "@/features/workspace/HandTour";
+import { EliteAssist } from "@/features/assist/EliteAssist";
+import { Bot } from "lucide-react";
+import { InstallPrompt } from "@/features/workspace/InstallPrompt";
+import {
+  applyAppearance,
+  DEFAULT_SETTINGS,
+  loadSettings,
+  saveSettings,
+  NOTIFICATION_KINDS,
+  type AppSettings,
+  type NotificationKind,
+} from "@/features/settings/settings";
+import { MagicCircle } from "@/features/chat/MagicCircle";
+import { PrivateChat, useChatHub } from "@/features/chat/PrivateChat";
+import { ChatSettings } from "@/features/chat/ChatSettings";
+import {
+  notificationPermission,
+  playSound,
+  playSendSound,
+  playAlarmRingtone,
+  requestNotificationPermission,
+  showSystemNotification,
+  vibrate,
+} from "@/lib/sounds";
+import { Countdown, PremiumUnlock, EliteUnlocked, type PlanId } from "@/features/premium/Premium";
+import { startCheckout } from "@/lib/paystack.functions";
+import { GOOGLE_REVIEW_MODE } from "@/lib/reviewMode";
+import { ReviewCRM } from "@/features/workspace/ReviewCRM";
+import { getEntitlements, recordStandardSend, type Entitlements } from "@/lib/billing.functions";
+
+export const Route = createFileRoute("/app")({
+  head: () => ({
+    meta: [
+      { title: GOOGLE_REVIEW_MODE ? "Elite Connectere — Customer CRM" : "Elite Connectere — Bulk Email Campaign Workspace" },
+            {
+        name: "description",
+        content:
+          GOOGLE_REVIEW_MODE ? "Internal CRM for opted-in active clients and existing customers." : "Elite Connectere is a bulk email campaign workspace that helps professionals create personalised email campaigns and send them through connected Gmail accounts using Elite Engine.",
+      },
+      { property: "og:title", content: GOOGLE_REVIEW_MODE ? "Elite Connectere — Customer CRM" : "Elite Connectere — Bulk Email Campaign Workspace" },
+      {
+        property: "og:description",
+        content:
+          GOOGLE_REVIEW_MODE ? "Internal CRM for opted-in active clients and existing customers." : "Elite Connectere is a bulk email campaign workspace that helps professionals create personalised email campaigns and send them through connected Gmail accounts using Elite Engine.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
+  component: () => GOOGLE_REVIEW_MODE ? <ReviewCRM /> : <Workspace />,
+});

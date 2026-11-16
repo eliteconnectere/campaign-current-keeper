@@ -1,0 +1,23 @@
+name: Fix Settings Top Float Chat
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/FIX_SETTINGS_TOP_FLOAT_CHAT.py'
+      - '.github/workflows/FIX-SETTINGS-TOP-FLOAT.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/FIX_SETTINGS_TOP_FLOAT_CHAT.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "Fix: Settings always scroll top; Rex FAB in Private Chat; Chat Settings clear prefs"
+          git push origin HEAD:main

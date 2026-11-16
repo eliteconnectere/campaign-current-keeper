@@ -1,0 +1,22 @@
+name: EMERGENCY Restore Assist 2
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore if PLACEHOLDER
+        run: |
+          head -c 20 src/features/assist/EliteAssist.tsx || true
+          python3 scripts/EMERGENCY_restore_elite_assist.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "EMERGENCY: restore EliteAssist + approveActionFromCard + build fix"
+          git push origin HEAD:main

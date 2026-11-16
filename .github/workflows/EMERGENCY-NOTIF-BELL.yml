@@ -1,0 +1,22 @@
+name: EMERGENCY Notif Bell
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-NOTIF-BELL.yml'
+      - 'scripts/fix_notifications_bell_ongo.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_notifications_bell_ongo.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Wire notifications-bell vs settings notifications dashboard" || exit 0
+          git push origin HEAD:main

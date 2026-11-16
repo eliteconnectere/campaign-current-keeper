@@ -1,0 +1,21 @@
+name: Real Delays Only
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/real-delays-only.py'
+      - '.github/workflows/real-delays-only.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/real-delays-only.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx src/lib/gmail.functions.ts
+          git commit -m "UX: real wall-clock send delays only; remove recipient_rejected skip logic" || exit 0
+          git push origin HEAD:main

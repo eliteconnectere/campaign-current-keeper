@@ -1,0 +1,45 @@
+name: Unified Bloodline Patch
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/unified-bloodline-patch.py
+      - name: Ensure tourDismissed is exported
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("src/features/workspace/HandTour.tsx")
+          t = p.read_text(encoding="utf-8")
+          if "export function tourDismissed" not in t and "function tourDismissed" not in t:
+              # common pattern: const OFF_KEY and dismissed check
+              if "OFF_KEY" in t and "export function resetTour" in t:
+                  helper = '''
+export function tourDismissed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(OFF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+'''
+                  t = t.replace("export function resetTour() {", helper + "\nexport function resetTour() {", 1)
+                  p.write_text(t, encoding="utf-8")
+                  print("added tourDismissed")
+              else:
+                  print("could not add tourDismissed")
+          else:
+              print("tourDismissed ok")
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: Bloodline welcome copy, Hand Tour toggle, Reset clears sent, Chat on crown" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,22 @@
+name: Wire Games Remove Assist
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/wire-games-remove-assist.py'
+      - '.github/workflows/wire-games-remove-assist.yml'
+      - 'src/features/games/GamesHub.tsx'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/wire-games-remove-assist.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx src/features/games/GamesHub.tsx
+          git commit -m "feat: floating Games hub; remove Elite Assist from crown" || exit 0
+          git push origin HEAD:main

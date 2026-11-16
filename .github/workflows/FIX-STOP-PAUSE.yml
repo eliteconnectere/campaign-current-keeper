@@ -1,0 +1,22 @@
+name: FIX Stop Pause Tone Delay
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/FIX-STOP-PAUSE.yml'
+      - 'scripts/FIX_stop_pause_tone_delay.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/FIX_stop_pause_tone_delay.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix: stop/pause immediate (no card); delay 3-8s; campaign copy serious" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,22 @@
+name: EMERGENCY Fake Approve Fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-FAKE-APPROVE.yml'
+      - 'scripts/fix_fake_approval_pills.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_fake_approval_pills.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix: stop fake [[APPROVE]] text; use real workspace read red pill" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,24 @@
+name: EMERGENCY Phase3 Nav
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-PHASE3-NAV.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch files
+        run: |
+          set -eux
+          python3 scripts/phase3_nav_patch.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Phase3: scroll-to-top, snippets-add, explicit GO, monitor helper" || exit 0
+          git push origin HEAD:main

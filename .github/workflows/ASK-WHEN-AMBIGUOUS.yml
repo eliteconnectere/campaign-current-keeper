@@ -1,0 +1,23 @@
+name: Ask When Ambiguous Nav
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/ASK_WHEN_AMBIGUOUS_NAV.py'
+      - '.github/workflows/ASK-WHEN-AMBIGUOUS.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/ASK_WHEN_AMBIGUOUS_NAV.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "Nav: ask which studio when ambiguous; never guess wrong studio"
+          git push origin HEAD:main

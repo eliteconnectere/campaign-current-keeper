@@ -1,0 +1,22 @@
+name: SIMPLIFY Send Path
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/SIMPLIFY-SEND.yml'
+      - 'scripts/SIMPLIFY_send_path.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/SIMPLIFY_send_path.py
+      - name: Commit
+        run: |
+          git config user.name "eliteconnectere"
+          git config user.email "eliteconnectere@gmail.com"
+          git add -A
+          git commit -m "Simplify OK send: import + prepare + Approve only (no validate gate)" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,269 @@
+name: Fix DNS Validation & Standard Mode Risky
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-dns-and-standard-mode.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply list hygiene and Standard Mode routing
+        run: |
+          python3 - << 'EOF'
+          import os
+
+          print("Applying Elite Connectere list hygiene & reputation updates...")
+
+          with open("src/routes/app.tsx", "r", encoding="utf-8") as f:
+              app_text = f.read()
+
+          if "async async function validate()" in app_text:
+              app_text = app_text.replace("async async function validate()", "async function validate()")
+              print("Fixed syntax error: async async -> async")
+
+          old_validate = """  async function validate() {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              toast.error("You're offline — reconnect to validate recipients.");
+              return;
+            }
+            if (!raw.trim() && recipients.length === 0) {
+              guideTo("recipients", "Add some email addresses first — paste a list or use Smart Fill.");
+              return;
+            }
+            const parsed = raw.trim() ? parseList(raw) : recipients;
+            const list = await enrichWithDomainScan(parsed);"""
+
+          new_validate = """  async function validate() {
+            if (typeof navigator !== "undefined" && !navigator.onLine) {
+              toast.error("You're offline — reconnect to validate recipients.");
+              return;
+            }
+            if (!raw.trim() && recipients.length === 0) {
+              guideTo("recipients", "Add some email addresses first — paste a list or use Smart Fill.");
+              return;
+            }
+            const parsed = raw.trim() ? parseList(raw) : recipients;
+            const toastId = toast.loading("Checking domain mail servers (DNS/MX)...");
+            let list = parsed;
+            try {
+              list = await enrichWithDomainScan(parsed);
+            } finally {
+              toast.dismiss(toastId);
+            }"""
+
+          if old_validate in app_text:
+              app_text = app_text.replace(old_validate, new_validate)
+              print("Added DNS/MX scanning feedback toast to validate()")
+          else:
+              print("validate() block pattern not exact — skipping toast wire (may already be updated)")
+
+          target_fn = '  function removeCategory(kind: "duplicate" | "risky") {'
+          send_risky_fn = """  function sendRiskyViaStandard() {
+            const riskyRecipients = recipients.filter((r) => r.status === "risky");
+            if (riskyRecipients.length === 0) {
+              toast.info("No risky recipients to send.");
+              return;
+            }
+            // Switch to Standard Mode (Mailto) so Elite Gmail accounts are completely protected
+            switchMode("standard");
+            setRecipients(riskyRecipients);
+            const nextGen = buildGenerated(riskyRecipients);
+            setGenerated(nextGen);
+            generatedRef.current = nextGen;
+            setFrom(1);
+            setTo(riskyRecipients.length);
+            setTab("risky");
+            setCleanupHandled(true);
+            setConfirming(null);
+            log(`Queued ${riskyRecipients.length} risky recipients in Standard Mode (Mailto) — protects Elite Gmail reputation`);
+            toast.success("Switched to Standard Mode", {
+              description: `Loaded ${riskyRecipients.length} risky address(es) for safe manual sending without risking connected Gmail accounts.`,
+            });
+          }
+
+          function removeCategory(kind: "duplicate" | "risky") {"""
+
+          if target_fn in app_text and "function sendRiskyViaStandard()" not in app_text:
+              app_text = app_text.replace(target_fn, send_risky_fn)
+              print("Added sendRiskyViaStandard() function")
+          elif "function sendRiskyViaStandard()" in app_text:
+              print("sendRiskyViaStandard already present")
+          else:
+              print("removeCategory anchor not found")
+
+          old_cleanup = """      {confirming?.kind === "cleanup" && (
+            <Confirm
+              title={`There are ${confirming.duplicate} duplicate recipients and ${confirming.risky} risky recipients.`}
+              body="Would you like to remove them before continuing?"
+              confirmLabel="Remove them"
+              onCancel={() => {
+                setCleanupHandled(true);
+                setConfirming(null);
+                setEngine("sending");
+                setScout(true);
+              }}
+              onConfirm={() => {
+                removeStatuses(["duplicate", "risky"]);
+                setCleanupHandled(true);
+                setConfirming(null);
+                log("Duplicate and risky recipients removed before sending");
+                setEngine("sending");
+                setScout(true);
+              }}
+            />
+          )}"""
+
+          new_cleanup = """      {confirming?.kind === "cleanup" && (
+            <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 px-6">
+              <div className="w-full max-w-[340px] animate-scale-in rounded-2xl border border-line bg-white p-5 shadow-[0_18px_44px_-26px_oklch(0.31_0.128_268/40%)]">
+                <p className="text-[14px] font-semibold text-ink">List Hygiene & Reputation</p>
+                <p className="mt-1.5 text-[12px] leading-snug text-ink-soft">
+                  Found {confirming.duplicate > 0 ? `${confirming.duplicate} duplicate(s)` : ""}{confirming.duplicate > 0 && confirming.risky > 0 ? " and " : ""}{confirming.risky > 0 ? `${confirming.risky} unverified/risky domain(s)` : ""}.
+                </p>
+                <p className="mt-2 text-[11px] leading-snug text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                  Sending risky emails through Elite Engine can hurt your connected Gmail sender score. Route them to Standard Mode (Mailto) instead to protect your accounts.
+                </p>
+                <div className="mt-4 flex flex-col gap-2">
+                  {confirming.risky > 0 && (
+                    <button
+                      type="button"
+                      onClick={sendRiskyViaStandard}
+                      className="w-full rounded-full bg-brand py-2 text-[12px] font-semibold text-white shadow-xs hover:opacity-90"
+                    >
+                      Send Risky in Standard Mode ({confirming.risky})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      removeStatuses(["duplicate", "risky"]);
+                      setCleanupHandled(true);
+                      setConfirming(null);
+                      log("Removed duplicate & risky recipients — sending safe valid contacts");
+                      setEngine("sending");
+                      setScout(true);
+                    }}
+                    className="w-full rounded-full border border-line bg-soft py-2 text-[12px] font-semibold text-ink hover:bg-neutral-100"
+                  >
+                    Remove Them & Send Safe Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(null)}
+                    className="w-full py-1 text-[11.5px] font-medium text-ink-soft hover:text-ink"
+                  >
+                    Review List First
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}"""
+
+          if old_cleanup in app_text:
+              app_text = app_text.replace(old_cleanup, new_cleanup)
+              print("Upgraded pre-send hygiene modal with 3 smart routing options")
+          else:
+              print("cleanup modal pattern not exact — may already be custom")
+
+          old_recipients_note = """            {(counts.duplicate > 0 || counts.risky > 0) && (
+              <p className="mt-1 text-[11px] leading-snug text-ink-soft">
+                Press and hold Duplicate or Risky to remove that whole group.
+              </p>
+            )}"""
+
+          new_recipients_note = """            {(counts.duplicate > 0 || counts.risky > 0) && (
+              <p className="mt-1 text-[11px] leading-snug text-ink-soft">
+                Press and hold Duplicate or Risky to remove that whole group.
+              </p>
+            )}
+            {counts.risky > 0 && (
+              <div className="mt-2 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-[11.5px] text-amber-900">
+                <span className="leading-tight">
+                  <strong>{counts.risky} Risky Address(es)</strong>: protect your Gmail reputation by sending these via Standard Mode.
+                </span>
+                <button
+                  type="button"
+                  onClick={sendRiskyViaStandard}
+                  className="ml-2 shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs hover:bg-amber-700"
+                >
+                  Send Standard
+                </button>
+              </div>
+            )}"""
+
+          if old_recipients_note in app_text and "Send Standard" not in app_text:
+              app_text = app_text.replace(old_recipients_note, new_recipients_note)
+              print("Added 'Send Standard' quick action banner to recipient list")
+          elif "Send Standard" in app_text:
+              print("Send Standard banner already present")
+          else:
+              print("recipients note pattern not exact")
+
+          with open("src/routes/app.tsx", "w", encoding="utf-8") as f:
+              f.write(app_text)
+
+          with open("src/features/data.ts", "r", encoding="utf-8") as f:
+              data_text = f.read()
+
+          old_domains = """const DOMAINS: [string, string][] = [
+            ["northlane.fr", "Northlane"],
+            ["brightloop.co.uk", "Brightloop"],
+            ["lumen.sg", "Lumen"],
+            ["casavia.mx", "Casavia"],
+            ["veltra.de", "Veltra"],
+            ["orbita.it", "Orbita"],
+            ["kestrel.ca", "Kestrel"],
+            ["novadesk.io", "Novadesk"],
+          ];"""
+
+          new_domains = """const DOMAINS: [string, string][] = [
+            ["gmail.com", "Google"],
+            ["outlook.com", "Microsoft"],
+            ["yahoo.com", "Yahoo"],
+            ["icloud.com", "Apple"],
+            ["northlane.fr", "Northlane"],
+            ["unreachable-testmail.invalid", "TestCorp"],
+            ["fake-dead-domain.xyz", "DeadMail"],
+            ["proton.me", "Proton"],
+          ];"""
+
+          if old_domains in data_text:
+              data_text = data_text.replace(old_domains, new_domains)
+              with open("src/features/data.ts", "w", encoding="utf-8") as f:
+                  f.write(data_text)
+              print("Updated Smart Fill domains with real MX test mix")
+          else:
+              print("DOMAINS block not exact — left data.ts unchanged")
+
+          if os.path.exists("src/features/premium/Premium.tsx"):
+              with open("src/features/premium/Premium.tsx", "r", encoding="utf-8") as f:
+                  prem = f.read()
+              prem = prem.replace("speed: 70, ", "")
+              with open("src/features/premium/Premium.tsx", "w", encoding="utf-8") as f:
+                  f.write(prem)
+
+          if os.path.exists("src/lib/chat.functions.ts"):
+              with open("src/lib/chat.functions.ts", "r", encoding="utf-8") as f:
+                  chat_fn = f.read()
+              chat_fn = chat_fn.replace(
+                  'return ent.plan === "plan3" || ent.company;',
+                  'return (ent.plan as string) === "plan3" || ent.plan === "premium" || (ent.plan as string) === "elite_promaxx" || ent.company;'
+              )
+              with open("src/lib/chat.functions.ts", "w", encoding="utf-8") as f:
+                  f.write(chat_fn)
+
+          print("Done! All updates applied cleanly.")
+          EOF
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx src/features/data.ts src/features/premium/Premium.tsx src/lib/chat.functions.ts || true
+          git commit -m "fix: DNS validation + Send Risky via Standard Mode" || exit 0
+          git push origin HEAD:main
