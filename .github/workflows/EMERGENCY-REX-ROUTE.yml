@@ -1,0 +1,22 @@
+name: EMERGENCY Rex Route Fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-REX-ROUTE.yml'
+      - 'scripts/fix_learn_more_rex_summary.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_learn_more_rex_summary.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix: Learn More Agent Rex is summary + link to /rex" || exit 0
+          git push origin HEAD:main

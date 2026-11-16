@@ -1,0 +1,21 @@
+name: Team Seat Limit 2
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/team-seat-limit-2.py'
+      - '.github/workflows/team-seat-limit-2.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/team-seat-limit-2.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: share with up to 2 assistants" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,22 @@
+name: FORCE Send Approve
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/FORCE-SEND-APPROVE.yml'
+      - 'scripts/FORCE_send_always_approve.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/FORCE_send_always_approve.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "FORCE: OK send/import never aborts on validate — always show Approve" || exit 0
+          git push origin HEAD:main

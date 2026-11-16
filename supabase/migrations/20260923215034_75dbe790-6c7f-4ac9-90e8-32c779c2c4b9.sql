@@ -1,0 +1,1 @@
+ALTER TABLE public.gmail_profiles ADD COLUMN IF NOT EXISTS gateway_identity text;

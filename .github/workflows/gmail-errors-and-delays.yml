@@ -1,0 +1,22 @@
+name: Gmail Errors + Real Delays
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/gmail-errors-and-real-delays.py'
+      - '.github/workflows/gmail-errors-and-delays.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/gmail-errors-and-real-delays.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/gmail.functions.ts src/routes/app.tsx
+          git commit -m "fix: Gmail 400/quota handling; real wall-clock send delays (3s=3000ms)" || exit 0
+          git push origin HEAD:main

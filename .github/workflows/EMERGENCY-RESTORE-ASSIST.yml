@@ -1,0 +1,58 @@
+name: EMERGENCY Restore Assist
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-RESTORE-ASSIST.yml'
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+      - name: Restore and unlock
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Parent of placeholder commit has the full file
+          git show '68a6f9e153f3f7d124be8234e0b88a3cfef5655e^:src/lib/campaign.functions.ts' > src/lib/campaign.functions.ts
+          wc -c src/lib/campaign.functions.ts
+          test $(wc -c < src/lib/campaign.functions.ts) -gt 20000
+          grep -q requireCampaignEntitlement src/lib/campaign.functions.ts
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('src/lib/campaign.functions.ts')
+          t = p.read_text()
+          old = '''  if (entitlements.communityPromo) {
+    throw new Error("The Bloodline community privilege includes Rex and up to 20 Gmail connections only. Campaign sending requires an eligible subscription.");
+  }
+  if (!entitlements.premium && !entitlements.trialActive) {
+    throw new Error("Your campaign access has ended. Activate an eligible subscription to create or send campaigns.");
+  }'''
+          new = '''  // Bloodline November promo may send campaigns.
+  if (!entitlements.communityPromo && !entitlements.premium && !entitlements.trialActive) {
+    throw new Error("Your campaign access has ended. Activate an eligible subscription to create or send campaigns.");
+  }'''
+          if old not in t:
+              raise SystemExit('entitlement block not found after restore')
+          p.write_text(t.replace(old, new))
+          print('campaign ok', p.stat().st_size)
+
+          p2 = Path('src/server/billing.server.ts')
+          t2 = p2.read_text()
+          before = t2
+          t2 = t2.replace('const lockedDelays: number[] = premium ? [] : [3, 4];', 'const lockedDelays: number[] = (premium || communityPromo) ? [] : [3, 4];', 1)
+          if t2 == before:
+              print('lockedDelays already patched or missing')
+          else:
+              print('lockedDelays unlocked for communityPromo')
+          p2.write_text(t2)
+          PY
+          git add src/lib/campaign.functions.ts src/server/billing.server.ts
+          git status
+          git commit -m "Bloodline promo: restore campaign.functions, allow send, unlock 3s and 4s delays" || exit 0
+          git push origin HEAD:main

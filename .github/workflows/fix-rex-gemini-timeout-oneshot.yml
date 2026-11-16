@@ -1,0 +1,26 @@
+name: Fix Rex Gemini timeout oneshot
+on:
+  push:
+    paths:
+      - ".github/workflows/fix-rex-gemini-timeout-oneshot.yml"
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply timeout fix
+        run: python3 scripts/fix-rex-gemini-timeout.py
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/assist.functions.ts
+          git commit -m "fix: Rex Gemini timeout 8s -> 28s (stop AbortError)"
+          git push

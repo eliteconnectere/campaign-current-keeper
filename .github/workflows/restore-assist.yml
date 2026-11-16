@@ -1,0 +1,22 @@
+name: Restore assist.functions
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/assist_b64_parts/**"
+      - "scripts/restore-assist-phase12.py"
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore file
+        run: python3 scripts/restore-assist-phase12.py
+      - name: Commit if changed
+        run: |
+          git config user.name "eliteconnectere"
+          git config user.email "eliteconnectere@gmail.com"
+          git add src/lib/assist.functions.ts
+          git diff --cached --quiet || (git commit -m "Restore assist.functions.ts Phase 1+2 from base64 parts" && git push)

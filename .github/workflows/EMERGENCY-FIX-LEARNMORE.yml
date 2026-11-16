@@ -1,0 +1,22 @@
+name: EMERGENCY Fix Learn More Syntax
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-FIX-LEARNMORE.yml'
+      - 'scripts/fix_learn_more_syntax.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_learn_more_syntax.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build fix: close rex-ai object in learn-more.tsx" || exit 0
+          git push origin HEAD:main

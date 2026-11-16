@@ -1,0 +1,22 @@
+name: EMERGENCY Rex Session Erase
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-REX-SESSION-ERASE.yml'
+      - 'scripts/fix_rex_session_and_erase.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_rex_session_and_erase.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Rex: keep live chat on navigate return; fix erase-data vs reset-workspace" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,74 @@
+name: Remove Risky Banner Safe
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/remove-risky-banner-safe.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove Open Vault UI block only
+        run: |
+          python3 << 'PY'
+          import re
+          from pathlib import Path
+          p = Path("src/routes/app.tsx")
+          t = p.read_text(encoding="utf-8")
+          o = t
+          # Remove conditional blocks that render Open Vault / Send Standard strip
+          patterns = [
+              re.compile(
+                  r"\{\(counts\.risky > 0 \|\| quarantineVault\.length > 0\) && \([\s\S]*?Open Vault[\s\S]*?Send Standard[\s\S]*?\)\}\)",
+                  re.M,
+              ),
+              re.compile(
+                  r"\{counts\.risky > 0 && \([\s\S]*?Open Vault[\s\S]*?Send Standard[\s\S]*?\)\}\)",
+                  re.M,
+              ),
+              re.compile(
+                  r"\{\(counts\.risky > 0 \|\| quarantineVault\.length > 0\) && \([\s\S]*?Send Standard[\s\S]*?\)\}\)",
+                  re.M,
+              ),
+          ]
+          for pat in patterns:
+              t2, n = pat.subn("", t)
+              if n:
+                  print("removed", n)
+                  t = t2
+                  break
+          else:
+              if "Open Vault" in t:
+                  # line-based: drop from line with "saved safely in Vault" through closing of that div group
+                  t2, n = re.subn(
+                      r"\n\s*\{\(counts\.risky[\s\S]{0,80}?saved safely in Vault[\s\S]{0,1500}?\)\}\)",
+                      "\n",
+                      t,
+                      count=1,
+                  )
+                  if n:
+                      t = t2
+                      print("removed via saved safely")
+                  else:
+                      print("WARN still has Open Vault")
+              else:
+                  print("already gone")
+          # Verify brace balance roughly
+          if t.count("{") != t.count("}"):
+              print("BRACE MISMATCH abort")
+              raise SystemExit(1)
+          if t != o:
+              p.write_text(t, encoding="utf-8")
+              print("wrote")
+          else:
+              print("no change")
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "UX: remove Open Vault / Send Standard banner under recipients" || exit 0
+          git push origin HEAD:main

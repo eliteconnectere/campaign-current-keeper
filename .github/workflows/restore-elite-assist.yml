@@ -1,0 +1,29 @@
+name: restore-elite-assist
+on:
+  push:
+    paths:
+      - '.github/workflows/restore-elite-assist.yml'
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore EliteAssist from good commit
+        run: |
+          git show d7409946c63130e4ebb7273680cbdf598cf9c656:src/features/assist/EliteAssist.tsx > src/features/assist/EliteAssist.tsx
+          # sanity: must contain cancelRecipientImport definition
+          grep -q "function cancelRecipientImport\\|const cancelRecipientImport\\|async function cancelRecipientImport" src/features/assist/EliteAssist.tsx
+          wc -c src/features/assist/EliteAssist.tsx
+      - name: Commit and push
+        run: |
+          git config user.name eliteconnectere
+          git config user.email eliteconnectere@gmail.com
+          git add src/features/assist/EliteAssist.tsx
+          if git diff --cached --quiet; then echo "already restored"; exit 0; fi
+          git commit -m "fix: restore EliteAssist approval handlers (fixes Rex open crash)"
+          git push origin HEAD:main

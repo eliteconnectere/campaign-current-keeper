@@ -1,0 +1,22 @@
+name: EMERGENCY OK Send
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-OK-SEND.yml'
+      - 'scripts/fix_ok_send_approval.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_ok_send_approval.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix: OK send shows Approve control, validates list, uses agreed draft" || exit 0
+          git push origin HEAD:main

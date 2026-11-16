@@ -1,0 +1,271 @@
+name: Restore Assist Upgrade Games
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore assist wiring
+        run: python3 scripts/restore-assist-and-upgrade-games.py
+      - name: Write proper GamesHub boards
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          Path("src/features/games").mkdir(parents=True, exist_ok=True)
+          Path("src/features/games/GamesHub.tsx").write_text(r'''import { useMemo, useState } from "react";
+import { X, Gamepad2, ArrowLeft, Dices, RotateCcw } from "lucide-react";
+
+export type GameId = "ludo" | "draughts" | "ayo" | "whot" | "snakes";
+
+const GAMES: { id: GameId; name: string; subtitle: string; players: string; cover: string }[] = [
+  { id: "ludo", name: "Ludo", subtitle: "Cross board · dice · 2–4 players", players: "2–4", cover: "bg-[#1e3a8a]" },
+  { id: "draughts", name: "Draughts", subtitle: "8×8 draft · jump & capture", players: "2", cover: "bg-[#5c4033]" },
+  { id: "ayo", name: "Ayo", subtitle: "Mancala pits · sow seeds · 2 players", players: "2", cover: "bg-[#3d2914]" },
+  { id: "whot", name: "Whot", subtitle: "Circle · Triangle · Cross · Star · Square", players: "2–4", cover: "bg-[#b91c1c]" },
+  { id: "snakes", name: "Snakes & Ladders", subtitle: "1–100 board · ladders & snakes", players: "2–4", cover: "bg-[#166534]" },
+];
+
+export function GamesHub({ onClose }: { onClose: () => void }) {
+  const [active, setActive] = useState<GameId | null>(null);
+  if (active === "ludo") return <LudoBoard onBack={() => setActive(null)} onClose={onClose} />;
+  if (active === "draughts") return <DraughtsBoard onBack={() => setActive(null)} onClose={onClose} />;
+  if (active === "ayo") return <AyoBoard onBack={() => setActive(null)} onClose={onClose} />;
+  if (active === "whot") return <WhotTable onBack={() => setActive(null)} onClose={onClose} />;
+  if (active === "snakes") return <SnakesBoard onBack={() => setActive(null)} onClose={onClose} />;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-[#0b1220]">
+      <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+        <span className="grid size-9 place-items-center rounded-full bg-brand text-white"><Gamepad2 className="size-5" /></span>
+        <div className="flex-1">
+          <p className="text-[15px] font-bold text-white">Elite Games</p>
+          <p className="text-[11px] text-white/60">Real boards · tap to play</p>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-full p-2 text-white" aria-label="Close"><X className="size-5" /></button>
+      </header>
+      <div className="mx-auto w-full max-w-lg flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        {GAMES.map((g) => (
+          <button key={g.id} type="button" onClick={() => setActive(g.id)} className="flex w-full overflow-hidden rounded-2xl border border-white/10 text-left">
+            <div className={`h-[88px] w-[100px] shrink-0 ${g.cover}`}><Cover id={g.id} /></div>
+            <div className="flex flex-1 flex-col justify-center bg-[#121a2b] px-3 py-2">
+              <span className="text-[15px] font-bold text-white">{g.name}</span>
+              <span className="text-[12px] text-white/65">{g.subtitle}</span>
+              <span className="mt-1 text-[11px] font-semibold text-sky-400">{g.players} players</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Cover({ id }: { id: GameId }) {
+  if (id === "ludo") return <div className="grid h-full grid-cols-2 grid-rows-2"><div className="bg-red-500" /><div className="bg-green-500" /><div className="bg-yellow-400" /><div className="bg-blue-500" /></div>;
+  if (id === "draughts") return <div className="grid h-full grid-cols-4 grid-rows-4">{Array.from({ length: 16 }, (_, i) => <div key={i} className={(Math.floor(i / 4) + i) % 2 === 0 ? "bg-[#f5deb3]" : "bg-[#3b2f2f]"} />)}</div>;
+  if (id === "ayo") return <div className="flex h-full flex-col justify-center gap-1 px-2">{[0, 1].map((r) => <div key={r} className="flex justify-center gap-1">{Array.from({ length: 6 }, (_, i) => <div key={i} className="size-3 rounded-full bg-[#2a1a0a] ring-1 ring-[#c4a574]" />)}</div>)}</div>;
+  if (id === "whot") return <div className="flex h-full items-center justify-center gap-1 text-lg text-white"><span>●</span><span className="text-yellow-300">▲</span><span>✚</span><span className="text-yellow-300">★</span></div>;
+  return <div className="grid h-full grid-cols-5 grid-rows-4 gap-px p-1">{Array.from({ length: 20 }, (_, i) => <div key={i} className="bg-emerald-600/80" />)}</div>;
+}
+
+function Shell({ title, onBack, onClose, children }: { title: string; onBack: () => void; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-[#0b1220]">
+      <header className="flex items-center gap-2 border-b border-white/10 px-3 py-2.5">
+        <button type="button" onClick={onBack} className="rounded-full p-2 text-white" aria-label="Back"><ArrowLeft className="size-5" /></button>
+        <p className="flex-1 text-[15px] font-bold text-white">{title}</p>
+        <button type="button" onClick={onClose} className="rounded-full p-2 text-white" aria-label="Close"><X className="size-5" /></button>
+      </header>
+      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col overflow-y-auto px-3 py-3">{children}</div>
+    </div>
+  );
+}
+
+function LudoBoard({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const colors = ["#ef4444", "#22c55e", "#eab308", "#3b82f6"];
+  const [pos, setPos] = useState([0, 0, 0, 0]);
+  const [turn, setTurn] = useState(0);
+  const [dice, setDice] = useState(1);
+  const [msg, setMsg] = useState("Red starts — roll");
+  function roll() {
+    const d = 1 + Math.floor(Math.random() * 6);
+    setDice(d);
+    setPos((p) => { const n = [...p]; n[turn] = Math.min(57, n[turn] + d); setMsg(`P${turn + 1} → ${n[turn]}`); return n; });
+    setTurn((t) => (t + 1) % 4);
+  }
+  return (
+    <Shell title="Ludo" onBack={onBack} onClose={onClose}>
+      <div className="mx-auto aspect-square w-full max-w-[340px] overflow-hidden rounded-xl border-4 border-slate-800 bg-slate-100">
+        <div className="grid h-full grid-cols-3 grid-rows-3">
+          <Yard c={colors[0]} a={turn === 0} s={pos[0]} />
+          <div className="grid grid-cols-6 gap-px bg-slate-300">{Array.from({ length: 6 }, (_, i) => <div key={i} className="bg-white" />)}</div>
+          <Yard c={colors[1]} a={turn === 1} s={pos[1]} />
+          <div className="grid grid-rows-6 gap-px bg-slate-300">{Array.from({ length: 6 }, (_, i) => <div key={i} className="bg-white" />)}</div>
+          <div className="grid place-items-center bg-white"><div className="grid size-[70%] grid-cols-2 grid-rows-2">{colors.map((c) => <div key={c} style={{ background: c }} />)}</div></div>
+          <div className="grid grid-rows-6 gap-px bg-slate-300">{Array.from({ length: 6 }, (_, i) => <div key={i} className="bg-white" />)}</div>
+          <Yard c={colors[2]} a={turn === 2} s={pos[2]} />
+          <div className="grid grid-cols-6 gap-px bg-slate-300">{Array.from({ length: 6 }, (_, i) => <div key={i} className="bg-white" />)}</div>
+          <Yard c={colors[3]} a={turn === 3} s={pos[3]} />
+        </div>
+      </div>
+      <p className="mt-2 text-center text-[12px] text-white/70">{msg}</p>
+      <div className="mt-2 flex justify-center gap-3">
+        <div className="grid size-14 place-items-center rounded-xl bg-white text-[22px] font-bold text-black">{dice}</div>
+        <button type="button" onClick={roll} className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-[13px] font-semibold text-white"><Dices className="size-4" /> Roll</button>
+      </div>
+    </Shell>
+  );
+}
+function Yard({ c, a, s }: { c: string; a: boolean; s: number }) {
+  return (
+    <div className={`relative m-0.5 ${a ? "ring-2 ring-white" : ""}`} style={{ background: c }}>
+      <div className="absolute inset-2 grid grid-cols-2 grid-rows-2 gap-1 rounded bg-white/25 p-1">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="rounded-full bg-white" style={{ border: `2px solid ${c}` }} />)}
+      </div>
+      <span className="absolute bottom-0.5 right-1 text-[9px] font-bold text-white">{s}</span>
+    </div>
+  );
+}
+
+function DraughtsBoard({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  type C = "r" | "b" | null;
+  const initial = useMemo(() => {
+    const b: C[] = Array(64).fill(null);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 8; c++) if ((r + c) % 2 === 1) b[r * 8 + c] = "b";
+    for (let r = 5; r < 8; r++) for (let c = 0; c < 8; c++) if ((r + c) % 2 === 1) b[r * 8 + c] = "r";
+    return b;
+  }, []);
+  const [board, setBoard] = useState<C[]>(initial);
+  const [sel, setSel] = useState<number | null>(null);
+  const [turn, setTurn] = useState<"r" | "b">("r");
+  function click(i: number) {
+    const row = Math.floor(i / 8), col = i % 8;
+    if (sel === null) { if (board[i] === turn) setSel(i); return; }
+    if (sel === i) { setSel(null); return; }
+    const piece = board[sel]; if (!piece || board[i]) { setSel(null); return; }
+    if ((row + col) % 2 !== 1) { setSel(null); return; }
+    const sr = Math.floor(sel / 8), sc = sel % 8, dr = row - sr, dc = col - sc;
+    const forward = piece === "r" ? -1 : 1;
+    const next = [...board];
+    if (Math.abs(dc) === 1 && dr === forward) { next[i] = piece; next[sel] = null; setBoard(next); setTurn(turn === "r" ? "b" : "r"); setSel(null); return; }
+    if (Math.abs(dc) === 2 && Math.abs(dr) === 2) {
+      const mid = (sr + dr / 2) * 8 + (sc + dc / 2);
+      if (board[mid] && board[mid] !== piece) { next[i] = piece; next[sel] = null; next[mid] = null; setBoard(next); setTurn(turn === "r" ? "b" : "r"); setSel(null); return; }
+    }
+    setSel(null);
+  }
+  return (
+    <Shell title="Draughts" onBack={onBack} onClose={onClose}>
+      <p className="mb-2 text-center text-[12px] text-white/70">Turn: {turn === "r" ? "Red" : "Black"}</p>
+      <div className="mx-auto grid aspect-square w-full max-w-[340px] grid-cols-8 grid-rows-8 overflow-hidden rounded-lg border-4 border-[#2a1f14]">
+        {board.map((cell, i) => {
+          const row = Math.floor(i / 8), col = i % 8, dark = (row + col) % 2 === 1;
+          return (
+            <button key={i} type="button" onClick={() => click(i)} className={`flex items-center justify-center ${dark ? "bg-[#5c4033]" : "bg-[#e8d5b5]"} ${sel === i ? "ring-2 ring-inset ring-yellow-300" : ""}`}>
+              {cell && <span className={`size-[70%] rounded-full border-2 border-white/30 ${cell === "r" ? "bg-red-600" : "bg-neutral-900"}`} />}
+            </button>
+          );
+        })}
+      </div>
+      <button type="button" onClick={() => { setBoard(initial); setTurn("r"); setSel(null); }} className="mt-3 self-center rounded-xl border border-white/20 px-3 py-2 text-[12px] text-white"><RotateCcw className="mr-1 inline size-3.5" />Reset</button>
+    </Shell>
+  );
+}
+
+function AyoBoard({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const [pits, setPits] = useState(() => Array(12).fill(4) as number[]);
+  const [stores, setStores] = useState([0, 0]);
+  const [turn, setTurn] = useState(0);
+  function sow(start: number) {
+    const mine = turn === 0 ? start <= 5 : start >= 6;
+    if (!mine || pits[start] === 0) return;
+    const next = [...pits]; let seeds = next[start]; next[start] = 0; let i = start;
+    while (seeds--) { i = (i + 1) % 12; next[i]++; }
+    const last = i; const mySide = turn === 0 ? last <= 5 : last >= 6;
+    if (mySide && next[last] === 1) { const opp = 11 - last; if (next[opp] > 0) { const g = next[opp] + 1; next[opp] = 0; next[last] = 0; setStores((s) => { const n = [...s]; n[turn] += g; return n; }); } }
+    setPits(next); setTurn(1 - turn);
+  }
+  const top = pits.slice(6, 12).reverse(); const bottom = pits.slice(0, 6);
+  return (
+    <Shell title="Ayo" onBack={onBack} onClose={onClose}>
+      <div className="rounded-2xl border-4 border-[#3d2914] bg-[#5c4033] p-3">
+        <div className="mb-2 flex justify-between text-[12px] font-bold text-[#f5deb3]"><span>B:{stores[1]}</span><span>{turn === 0 ? "You" : "Opp"}</span><span>A:{stores[0]}</span></div>
+        <div className="flex gap-2">
+          <div className="flex w-9 items-center justify-center rounded-full bg-[#2a1a0a] font-bold text-[#f5deb3]">{stores[1]}</div>
+          <div className="flex-1 space-y-2">
+            <div className="grid grid-cols-6 gap-1">{top.map((n, idx) => { const real = 11 - idx; return <button key={real} type="button" onClick={() => sow(real)} className="aspect-square rounded-full bg-[#2a1a0a] text-[13px] font-bold text-[#f5deb3] ring-2 ring-[#c4a574]">{n}</button>; })}</div>
+            <div className="grid grid-cols-6 gap-1">{bottom.map((n, idx) => <button key={idx} type="button" onClick={() => sow(idx)} className="aspect-square rounded-full bg-[#2a1a0a] text-[13px] font-bold text-[#f5deb3] ring-2 ring-[#c4a574]">{n}</button>)}</div>
+          </div>
+          <div className="flex w-9 items-center justify-center rounded-full bg-[#2a1a0a] font-bold text-[#f5deb3]">{stores[0]}</div>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+
+const SHAPES = ["Circle", "Triangle", "Cross", "Star", "Square"] as const;
+const COLS = ["#dc2626", "#2563eb", "#16a34a", "#ca8a04", "#7c3aed"];
+function WhotTable({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const mk = () => { const shape = SHAPES[Math.floor(Math.random() * 5)]!; return { shape, num: 1 + Math.floor(Math.random() * 14), color: COLS[SHAPES.indexOf(shape)]! }; };
+  const [pile, setPile] = useState(mk);
+  const [hand, setHand] = useState(() => [mk(), mk(), mk(), mk(), mk()]);
+  const [msg, setMsg] = useState("Match shape or number");
+  function play(i: number) {
+    const c = hand[i]!; if (c.shape === pile.shape || c.num === pile.num) { setPile(c); setHand((h) => h.filter((_, j) => j !== i)); setMsg(`Played ${c.num} ${c.shape}`); } else setMsg("No match");
+  }
+  return (
+    <Shell title="Whot" onBack={onBack} onClose={onClose}>
+      <p className="mb-2 text-center text-[12px] text-white/70">{msg}</p>
+      <div className="flex justify-center"><div className="flex h-28 w-20 flex-col items-center justify-center rounded-xl border-2 bg-white" style={{ color: pile.color }}><span className="text-[22px] font-black">{pile.num}</span><span className="text-[11px] font-bold">{pile.shape}</span></div></div>
+      <div className="mt-4 flex flex-wrap justify-center gap-2">{hand.map((c, i) => <button key={i} type="button" onClick={() => play(i)} className="flex h-24 w-[70px] flex-col items-center justify-center rounded-xl border-2 bg-white" style={{ color: c.color }}><span className="text-[18px] font-black">{c.num}</span><span className="text-[10px] font-bold">{c.shape}</span></button>)}</div>
+      <button type="button" onClick={() => setHand((h) => [...h, mk()])} className="mt-4 self-center rounded-xl bg-brand px-4 py-2 text-[13px] font-semibold text-white">Draw</button>
+    </Shell>
+  );
+}
+
+const SNAKES: Record<number, number> = { 16: 6, 48: 30, 62: 18, 88: 24, 95: 56, 97: 78 };
+const LADDERS: Record<number, number> = { 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
+function SnakesBoard({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const [p1, setP1] = useState(1); const [p2, setP2] = useState(1); const [turn, setTurn] = useState<1 | 2>(1); const [dice, setDice] = useState(1); const [msg, setMsg] = useState("P1 roll");
+  function roll() {
+    const d = 1 + Math.floor(Math.random() * 6); setDice(d);
+    const move = (pos: number) => { let n = Math.min(100, pos + d); if (LADDERS[n]) { setMsg(`Ladder ${n}→${LADDERS[n]}`); n = LADDERS[n]!; } else if (SNAKES[n]) { setMsg(`Snake ${n}→${SNAKES[n]}`); n = SNAKES[n]!; } else setMsg(`→ ${n}`); return n; };
+    if (turn === 1) { setP1(move); setTurn(2); } else { setP2(move); setTurn(1); }
+  }
+  return (
+    <Shell title="Snakes & Ladders" onBack={onBack} onClose={onClose}>
+      <div className="mx-auto grid aspect-square w-full max-w-[340px] grid-cols-10 grid-rows-10 overflow-hidden rounded-lg border-4 border-emerald-900">
+        {Array.from({ length: 100 }, (_, idx) => {
+          const row = Math.floor(idx / 10), col = idx % 10;
+          const num = row % 2 === 0 ? 100 - (row * 10 + col) : 100 - (row * 10 + (9 - col));
+          return (
+            <div key={num} className={`relative text-[7px] font-bold ${(row + col) % 2 === 0 ? "bg-emerald-100" : "bg-emerald-200"}`}>
+              <span className="absolute left-0.5 top-0">{num}</span>
+              {SNAKES[num] && <span className="absolute inset-0 grid place-items-center text-[9px]">🐍</span>}
+              {LADDERS[num] && <span className="absolute inset-0 grid place-items-center text-[9px]">🪜</span>}
+              {p1 === num && <span className="absolute bottom-0 left-0.5 size-2 rounded-full bg-red-500" />}
+              {p2 === num && <span className="absolute bottom-0 right-0.5 size-2 rounded-full bg-blue-600" />}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-center text-[12px] text-white/70">{msg} · P1:{p1} P2:{p2}</p>
+      <div className="mt-2 flex justify-center gap-3">
+        <div className="grid size-12 place-items-center rounded-lg bg-white text-[18px] font-bold">{dice}</div>
+        <button type="button" onClick={roll} className="rounded-xl bg-brand px-4 py-2 text-[13px] font-semibold text-white">Roll P{turn}</button>
+      </div>
+    </Shell>
+  );
+}
+''', encoding="utf-8")
+          print("GamesHub written", Path("src/features/games/GamesHub.tsx").stat().st_size)
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx src/features/games/GamesHub.tsx
+          git commit -m "fix: restore Elite Assist; upgrade Games to real boards" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,26 @@
+name: Apply Master Workspace Fixes
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/apply-fixes.mjs'
+      - '.github/workflows/apply-fixes.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          node scripts/apply-fixes.mjs
+          git add src/routes/app.tsx src/features/chat/PrivateChat.tsx src/lib/reviewMode.ts
+          git commit -m "Restore workspace and apply master tier gating" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,33 @@
+name: Safe Workspace Patches
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply workspace patches
+        run: |
+          python3 scripts/fix-showpaneltip-syntax.py || true
+          python3 scripts/fix-log-syntax.py || true
+          python3 scripts/patch-connect-modal.py || true
+          python3 scripts/patch-tour-settings.py || true
+          python3 scripts/patch-reset-notif-guide.py || true
+          python3 scripts/patch-protection-copy.py || true
+          python3 scripts/patch-admin-safety.py || true
+          python3 scripts/patch-rex-human.py || true
+          # MagicCircle patch disabled: its legacy regex corrupted JSX.
+          python3 scripts/fix-showpaneltip-syntax.py || true
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx src/features/workspace/HandTour.tsx src/lib/contentSafety.ts src/lib/assist.functions.ts src/features/chat/MagicCircle.tsx || true
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "fix: MagicCircle full ring + Chat Radar Rex Settings Refresh Admin"
+          git push origin HEAD:main

@@ -1,0 +1,22 @@
+name: EMERGENCY Validate Race
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-VALIDATE-RACE.yml'
+      - 'scripts/fix_validate_race_approve.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_validate_race_approve.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix: import/validate race — OK send always reaches Approve button" || exit 0
+          git push origin HEAD:main

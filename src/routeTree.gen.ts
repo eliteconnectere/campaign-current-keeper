@@ -10,33 +10,259 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/account'
+import { Route as AppRouteImport } from './routes/app'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as LearnMoreRouteImport } from './routes/learn-more'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as ReviewRouteImport } from './routes/review'
+import { Route as SupportRouteImport } from './routes/support'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as UnsubscribeRouteImport } from './routes/unsubscribe'
+import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as BillingReturnRouteImport } from './routes/billing.return'
+import { Route as ApiPublicPaystackWebhookRouteImport } from './routes/api/public/paystack-webhook'
+import { Route as ApiPublicProcessCampaignsRouteImport } from './routes/api/public/process-campaigns'
+import { Route as ApiPublicGmailCallbackRouteImport } from './routes/api/public/gmail.callback'
+import { Route as RexRouteImport } from './routes/rex'
+import { Route as RexIdRouteImport } from './routes/rex/$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearnMoreRoute = LearnMoreRouteImport.update({
+  id: '/learn-more',
+  path: '/learn-more',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReviewRoute = ReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupportRoute = SupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnsubscribeRoute = UnsubscribeRouteImport.update({
+  id: '/unsubscribe',
+  path: '/unsubscribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AuthRoute,
+} as any)
+const BillingReturnRoute = BillingReturnRouteImport.update({
+  id: '/billing/return',
+  path: '/billing/return',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicPaystackWebhookRoute =
+  ApiPublicPaystackWebhookRouteImport.update({
+    id: '/api/public/paystack-webhook',
+    path: '/api/public/paystack-webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicProcessCampaignsRoute =
+  ApiPublicProcessCampaignsRouteImport.update({
+    id: '/api/public/process-campaigns',
+    path: '/api/public/process-campaigns',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicGmailCallbackRoute = ApiPublicGmailCallbackRouteImport.update({
+  id: '/api/public/gmail/callback',
+  path: '/api/public/gmail/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RexRoute = RexRouteImport.update({
+  id: '/rex',
+  path: '/rex',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RexIdRoute = RexIdRouteImport.update({
+  id: '/rex/$id',
+  path: '/rex/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/app': typeof AppRoute
+  '/auth': typeof AuthRouteWithChildren
+  '/learn-more': typeof LearnMoreRoute
+  '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/review': typeof ReviewRoute
+  '/support': typeof SupportRoute
+  '/terms': typeof TermsRoute
+  '/unsubscribe': typeof UnsubscribeRoute
+  '/auth/callback': typeof AuthCallbackRoute
+  '/billing/return': typeof BillingReturnRoute
+  '/api/public/paystack-webhook': typeof ApiPublicPaystackWebhookRoute
+  '/api/public/process-campaigns': typeof ApiPublicProcessCampaignsRoute
+  '/api/public/gmail/callback': typeof ApiPublicGmailCallbackRoute
+  '/rex': typeof RexRoute
+  '/rex/$id': typeof RexIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/app': typeof AppRoute
+  '/auth': typeof AuthRouteWithChildren
+  '/learn-more': typeof LearnMoreRoute
+  '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/review': typeof ReviewRoute
+  '/support': typeof SupportRoute
+  '/terms': typeof TermsRoute
+  '/unsubscribe': typeof UnsubscribeRoute
+  '/auth/callback': typeof AuthCallbackRoute
+  '/billing/return': typeof BillingReturnRoute
+  '/api/public/paystack-webhook': typeof ApiPublicPaystackWebhookRoute
+  '/api/public/process-campaigns': typeof ApiPublicProcessCampaignsRoute
+  '/api/public/gmail/callback': typeof ApiPublicGmailCallbackRoute
+  '/rex': typeof RexRoute
+  '/rex/$id': typeof RexIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
+  '/app': typeof AppRoute
+  '/auth': typeof AuthRouteWithChildren
+  '/learn-more': typeof LearnMoreRoute
+  '/privacy': typeof PrivacyRoute
+  '/reset-password': typeof ResetPasswordRoute
+  '/review': typeof ReviewRoute
+  '/support': typeof SupportRoute
+  '/terms': typeof TermsRoute
+  '/unsubscribe': typeof UnsubscribeRoute
+  '/auth/callback': typeof AuthCallbackRoute
+  '/billing/return': typeof BillingReturnRoute
+  '/api/public/paystack-webhook': typeof ApiPublicPaystackWebhookRoute
+  '/api/public/process-campaigns': typeof ApiPublicProcessCampaignsRoute
+  '/api/public/gmail/callback': typeof ApiPublicGmailCallbackRoute
+  '/rex': typeof RexRoute
+  '/rex/$id': typeof RexIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/account'
+    | '/app'
+    | '/auth'
+    | '/learn-more'
+    | '/privacy'
+    | '/reset-password'
+    | '/review'
+    | '/support'
+    | '/terms'
+    | '/unsubscribe'
+    | '/auth/callback'
+    | '/billing/return'
+    | '/api/public/paystack-webhook'
+    | '/api/public/process-campaigns'
+    | '/api/public/gmail/callback'
+    | '/rex'
+    | '/rex/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/account'
+    | '/app'
+    | '/auth'
+    | '/learn-more'
+    | '/privacy'
+    | '/reset-password'
+    | '/review'
+    | '/support'
+    | '/terms'
+    | '/unsubscribe'
+    | '/auth/callback'
+    | '/billing/return'
+    | '/api/public/paystack-webhook'
+    | '/api/public/process-campaigns'
+    | '/api/public/gmail/callback'
+    | '/rex'
+    | '/rex/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/account'
+    | '/app'
+    | '/auth'
+    | '/learn-more'
+    | '/privacy'
+    | '/reset-password'
+    | '/review'
+    | '/support'
+    | '/terms'
+    | '/unsubscribe'
+    | '/auth/callback'
+    | '/billing/return'
+    | '/api/public/paystack-webhook'
+    | '/api/public/process-campaigns'
+    | '/api/public/gmail/callback'
+    | '/rex'
+    | '/rex/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
+  AppRoute: typeof AppRoute
+  AuthRoute: typeof AuthRouteWithChildren
+  LearnMoreRoute: typeof LearnMoreRoute
+  PrivacyRoute: typeof PrivacyRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
+  ReviewRoute: typeof ReviewRoute
+  SupportRoute: typeof SupportRoute
+  TermsRoute: typeof TermsRoute
+  UnsubscribeRoute: typeof UnsubscribeRoute
+  BillingReturnRoute: typeof BillingReturnRoute
+  ApiPublicPaystackWebhookRoute: typeof ApiPublicPaystackWebhookRoute
+  ApiPublicProcessCampaignsRoute: typeof ApiPublicProcessCampaignsRoute
+  ApiPublicGmailCallbackRoute: typeof ApiPublicGmailCallbackRoute
+  RexRoute: typeof RexRoute
+  RexIdRoute: typeof RexIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +274,156 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learn-more': {
+      id: '/learn-more'
+      path: '/learn-more'
+      fullPath: '/learn-more'
+      preLoaderRoute: typeof LearnMoreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/review': {
+      id: '/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof ReviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/support': {
+      id: '/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof SupportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/unsubscribe': {
+      id: '/unsubscribe'
+      path: '/unsubscribe'
+      fullPath: '/unsubscribe'
+      preLoaderRoute: typeof UnsubscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof AuthRoute
+    }
+    '/billing/return': {
+      id: '/billing/return'
+      path: '/billing/return'
+      fullPath: '/billing/return'
+      preLoaderRoute: typeof BillingReturnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/paystack-webhook': {
+      id: '/api/public/paystack-webhook'
+      path: '/api/public/paystack-webhook'
+      fullPath: '/api/public/paystack-webhook'
+      preLoaderRoute: typeof ApiPublicPaystackWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/process-campaigns': {
+      id: '/api/public/process-campaigns'
+      path: '/api/public/process-campaigns'
+      fullPath: '/api/public/process-campaigns'
+      preLoaderRoute: typeof ApiPublicProcessCampaignsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/gmail/callback': {
+      id: '/api/public/gmail/callback'
+      path: '/api/public/gmail/callback'
+      fullPath: '/api/public/gmail/callback'
+      preLoaderRoute: typeof ApiPublicGmailCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rex': {
+      id: '/rex'
+      path: '/rex'
+      fullPath: '/rex'
+      preLoaderRoute: typeof RexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rex/$id': {
+      id: '/rex/$id'
+      path: '/rex/$id'
+      fullPath: '/rex/$id'
+      preLoaderRoute: typeof RexIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
+interface AuthRouteChildren {
+  AuthCallbackRoute: typeof AuthCallbackRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthCallbackRoute: AuthCallbackRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
+  AppRoute: AppRoute,
+  AuthRoute: AuthRouteWithChildren,
+  LearnMoreRoute: LearnMoreRoute,
+  PrivacyRoute: PrivacyRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
+  ReviewRoute: ReviewRoute,
+  SupportRoute: SupportRoute,
+  TermsRoute: TermsRoute,
+  UnsubscribeRoute: UnsubscribeRoute,
+  BillingReturnRoute: BillingReturnRoute,
+  ApiPublicPaystackWebhookRoute: ApiPublicPaystackWebhookRoute,
+  ApiPublicProcessCampaignsRoute: ApiPublicProcessCampaignsRoute,
+  ApiPublicGmailCallbackRoute: ApiPublicGmailCallbackRoute,
+  RexRoute: RexRoute,
+  RexIdRoute: RexIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

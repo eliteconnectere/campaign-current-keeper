@@ -1,0 +1,72 @@
+name: fix-nav-places
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-nav-places.yml'
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Restore EliteAssist if corrupted
+        run: |
+          if ! grep -q 'export function EliteAssist' src/features/assist/EliteAssist.tsx 2>/dev/null; then
+            echo "Corrupted — restoring from 69ed848"
+            git show 69ed848677c798dd55bb08afa51b1cf4d2ea7ed1:src/features/assist/EliteAssist.tsx > src/features/assist/EliteAssist.tsx
+          fi
+          # Also ensure we have the good version if content is only PLACEHOLDER
+          if grep -q '^PLACEHOLDER$' src/features/assist/EliteAssist.tsx 2>/dev/null || [ "$(wc -c < src/features/assist/EliteAssist.tsx)" -lt 1000 ]; then
+            git show 69ed848677c798dd55bb08afa51b1cf4d2ea7ed1:src/features/assist/EliteAssist.tsx > src/features/assist/EliteAssist.tsx
+          fi
+      - name: Apply navigation place expansion
+        run: |
+          python3 scripts/upgrade-rex-nav-places.py || true
+          # Inline fallback if script fails on pattern
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          ea_path = Path("src/features/assist/EliteAssist.tsx")
+          ea = ea_path.read_text()
+          if "resolvePlaceFromText" not in ea:
+              ea = ea.replace(
+                  'import { NAVIGATION_DESTINATIONS, buildNavigationCatalogForAi } from "@/features/assist/navigation.registry";',
+                  'import { NAVIGATION_DESTINATIONS, buildNavigationCatalogForAi, resolvePlaceFromText } from "@/features/assist/navigation.registry";',
+              )
+          if '| "tour";' in ea and 'night-mode' not in ea.split('export type AssistPlace')[1][:2500]:
+              ea = ea.replace('| "tour";', '| "tour"\n  | "night-mode"\n  | "gmail-profiles"\n  | "delay-settings"\n  | "chat-settings"\n  | "templates";', 1)
+          if '"night-mode"' not in ea.split('PLACE_LABEL')[1][:1800]:
+              ea = ea.replace('  terms: "Terms",\n};', '  terms: "Terms",\n  "night-mode": "Open Night Mode",\n  "gmail-profiles": "Open Gmail profiles",\n  "delay-settings": "Open delay settings",\n  "chat-settings": "Open Chat settings",\n  templates: "Open Templates",\n};', 1)
+          new_resolve = '''/** Resolve explicit destination requests independently of Gemini's optional tags. */\nfunction resolveNavigationIntent(question: string): AssistPlace | null {\n  const place = resolvePlaceFromText(question);\n  return place as AssistPlace | null;\n}\n\n'''
+          ea2, n = re.subn(
+              r'/\*\* Resolve explicit destination requests independently of Gemini\'s optional tags\. \*/\nfunction resolveNavigationIntent\(question: string\): AssistPlace \| null \{[\s\S]*?\n\}\n\nfunction extractSuggests',
+              new_resolve + 'function extractSuggests',
+              ea,
+              count=1,
+          )
+          if n: ea = ea2
+          ea_path.write_text(ea)
+          print("EliteAssist patched", n)
+
+          app_path = Path("src/routes/app.tsx")
+          app = app_path.read_text()
+          old = '''            } else if (p === "studio") {\n              setStudioOpen(true);\n            } else if (p === "hotspot") {\n              setTeamOpen(true);\n            } else if (p === "quarantine") {\n              setVaultOpen(true);\n            } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools") {\n              setMenuView(p === "protection" ? "campaignProtection" : p);\n              setPanel("menu");\n            } else if (p === "notifications-bell") {\n'''
+          new = '''            } else if (p === "studio" || p === "night-mode") {\n              setStudioOpen(true);\n            } else if (p === "hotspot") {\n              setTeamOpen(true);\n            } else if (p === "quarantine") {\n              setVaultOpen(true);\n            } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools" || p === "gmail-profiles" || p === "delay-settings") {\n              setMenuView(p === "protection" ? "campaignProtection" : p === "gmail-profiles" || p === "delay-settings" ? "settings" : p);\n              setPanel("menu");\n            } else if (p === "chat-settings") {\n              if (chatEligible) { setChatOpen(true); setChatSettingsOpen(true); }\n              else askUpgrade("Private Chat is a Premium and Elite Studio ProMaxx feature.", true);\n            } else if (p === "templates") {\n              setPanel("none");\n              window.setTimeout(() => document.querySelector("[data-ec-templates]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);\n            } else if (p === "notifications-bell") {\n'''
+          if old in app:
+              app_path.write_text(app.replace(old, new, 1))
+              print("app onGo patched")
+          else:
+              print("app pattern already updated or differs")
+          PY
+      - name: Commit
+        run: |
+          git config user.name eliteconnectere
+          git config user.email eliteconnectere@gmail.com
+          git add -A
+          git diff --cached --quiet || git commit -m "fix: restore EliteAssist + expand navigation places (AssistPlace, onGo, resolver)"
+          git push origin main

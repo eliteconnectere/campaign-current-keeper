@@ -1,0 +1,21 @@
+name: Team Shared Profile Limit
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/team-shared-limit.yml'
+      - 'scripts/team-shared-profile-limit.py'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/team-shared-profile-limit.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: team shares one Gmail profile limit (not per member)" || exit 0
+          git push origin HEAD:main

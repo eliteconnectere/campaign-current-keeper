@@ -1,0 +1,21 @@
+name: Fix Connect Reset Promo
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/fix-connect-reset-promo.py'
+      - '.github/workflows/fix-connect-reset-promo.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix-connect-reset-promo.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: Gmail connect gate, Reset locks, promo chip, MagicCircle, hide PSP toggle, assistant labels" || exit 0
+          git push origin HEAD:main

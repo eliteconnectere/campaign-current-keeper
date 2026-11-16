@@ -1,0 +1,21 @@
+name: Hide Risky Banner + Unsubscribe Exit
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/hide-risky-banner-and-unsubscribe-exit.py'
+      - '.github/workflows/hide-banner-unsubscribe.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/hide-risky-banner-and-unsubscribe-exit.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx src/routes/unsubscribe.tsx
+          git commit -m "UX: hide post-validate risky banner; unsubscribe Done returns to mail" || exit 0
+          git push origin HEAD:main

@@ -1,0 +1,22 @@
+name: Wire FeatureStudios filters
+on:
+  push:
+    paths:
+      - ".github/workflows/wire-feature-studio-filters.yml"
+      - "scripts/wire-feature-studio-filters.py"
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/wire-feature-studio-filters.py
+      - run: |
+          if git diff --quiet; then echo No changes; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "Wire Rex tracker/activity filters into FeatureStudios"
+          git push

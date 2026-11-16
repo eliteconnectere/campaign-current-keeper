@@ -1,0 +1,23 @@
+name: Register All Studio Settings
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/REGISTER_ALL_STUDIO_SETTINGS.py'
+      - '.github/workflows/REGISTER-STUDIO-SETTINGS.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/REGISTER_ALL_STUDIO_SETTINGS.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "Register Rex Studio settings (displayName, personality, automation, memory) for direct change"
+          git push origin HEAD:main

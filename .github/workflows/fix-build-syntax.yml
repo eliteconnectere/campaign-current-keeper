@@ -1,0 +1,21 @@
+name: Fix Build Syntax
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/fix-build-syntax.py'
+      - '.github/workflows/fix-build-syntax.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix-build-syntax.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "fix: repair app.tsx syntax (PSP + MagicCircle) so production builds" || exit 0
+          git push origin HEAD:main

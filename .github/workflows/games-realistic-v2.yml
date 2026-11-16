@@ -1,0 +1,154 @@
+name: Games Realistic V2
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upgrade Ludo to 15x15 cross + Whot real shapes/specials
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          # Patch existing GamesHub for more realistic Ludo grid + Whot deck
+          p = Path("src/features/games/GamesHub.tsx")
+          if not p.exists():
+              print("GamesHub missing"); raise SystemExit(1)
+          t = p.read_text(encoding="utf-8")
+
+          # Add Ludo15 component if not present
+          if "function Ludo15" not in t and "LUDO_15" not in t:
+              # Prefer routing ludo to Ludo15
+              t = t.replace(
+                  'if (active === "ludo") return <LudoBoard onBack={() => setActive(null)} onClose={onClose} />;',
+                  'if (active === "ludo") return <Ludo15 onBack={() => setActive(null)} onClose={onClose} />;',
+              )
+              # Append Ludo15 before end of file
+              ludo15 = r'''
+
+/** Research-based Ludo: 15×15 cross, 4 yards, centre home triangles, dice; need 6 to leave yard. */
+function Ludo15({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+  const RED = "#e53935", GREEN = "#43a047", YELLOW = "#fdd835", BLUE = "#1e88e5";
+  // tokens: -1 = in yard, 0..51 = main track, 52..56 = home column, 57 = finished
+  const [tokens, setTokens] = useState([[-1, -1, -1, -1], [-1, -1, -1, -1], [-1, -1, -1, -1], [-1, -1, -1, -1]]);
+  const [turn, setTurn] = useState(0);
+  const [dice, setDice] = useState(1);
+  const [msg, setMsg] = useState("Roll a 6 to leave the yard");
+  const colors = [RED, GREEN, YELLOW, BLUE];
+  const names = ["Red", "Green", "Yellow", "Blue"];
+
+  function roll() {
+    const d = 1 + Math.floor(Math.random() * 6);
+    setDice(d);
+    setTokens((all) => {
+      const mine = [...all[turn]!];
+      // prefer token that can move
+      let moved = false;
+      for (let i = 0; i < 4; i++) {
+        const p = mine[i]!;
+        if (p === -1 && d === 6) {
+          mine[i] = 0;
+          moved = true;
+          setMsg(`${names[turn]} entered the board`);
+          break;
+        }
+        if (p >= 0 && p < 57) {
+          const next = p + d;
+          if (next <= 57) {
+            mine[i] = next === 57 ? 57 : next;
+            moved = true;
+            setMsg(`${names[turn]} moved to ${mine[i]}`);
+            break;
+          }
+        }
+      }
+      if (!moved) setMsg(`${names[turn]} cannot move`);
+      const nextAll = all.map((row, ri) => (ri === turn ? mine : row));
+      return nextAll;
+    });
+    setTurn((t) => (t + 1) % 4);
+  }
+
+  // Build 15x15 cell colours for classic cross look
+  const cells: string[] = [];
+  for (let r = 0; r < 15; r++) {
+    for (let c = 0; c < 15; c++) {
+      let col = "#f5f5f5";
+      // yards
+      if (r < 6 && c < 6) col = RED;
+      else if (r < 6 && c > 8) col = GREEN;
+      else if (r > 8 && c < 6) col = BLUE;
+      else if (r > 8 && c > 8) col = YELLOW;
+      // path arms (white path with tinted home columns)
+      else if (c >= 6 && c <= 8) col = "#ffffff";
+      else if (r >= 6 && r <= 8) col = "#ffffff";
+      // centre
+      if (r >= 6 && r <= 8 && c >= 6 && c <= 8) col = "#eceff1";
+      // home columns (middle of each arm)
+      if (c === 7 && r >= 1 && r <= 5) col = RED;
+      if (r === 7 && c >= 9 && c <= 13) col = GREEN;
+      if (c === 7 && r >= 9 && r <= 13) col = YELLOW;
+      if (r === 7 && c >= 1 && c <= 5) col = BLUE;
+      cells.push(col);
+    }
+  }
+
+  return (
+    <Shell title="Ludo" onBack={onBack} onClose={onClose}>
+      <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-xl border-[6px] border-[#263238] bg-white shadow-2xl">
+        <div className="grid aspect-square grid-cols-15" style={{ gridTemplateColumns: "repeat(15, minmax(0, 1fr))" }}>
+          {cells.map((bg, i) => (
+            <div key={i} className="border border-black/10" style={{ background: bg, minHeight: 0 }} />
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {names.map((n, i) => (
+          <div key={n} className={`rounded-lg px-2 py-1.5 text-center text-[10px] font-bold text-white ${turn === i ? "ring-2 ring-white" : ""}`} style={{ background: colors[i] }}>
+            {n}\n{tokens[i]!.filter((x) => x === 57).length}/4 home
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-center text-[12px] text-white/75">{msg}</p>
+      <div className="mt-2 flex items-center justify-center gap-3">
+        <div className="grid size-14 place-items-center rounded-xl border-2 border-white/40 bg-white text-[24px] font-black text-black shadow-lg">{dice}</div>
+        <button type="button" onClick={roll} className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-3 text-[14px] font-semibold text-white">
+          <Dices className="size-5" /> Roll
+        </button>
+      </div>
+      <p className="mt-2 text-center text-[10px] text-white/45">15×15 cross board · 6 to leave yard · exact roll to finish</p>
+    </Shell>
+  );
+}
+'''
+              # Fix template - can't use \n in jsx text that way
+              ludo15 = ludo15.replace("{n}\\n{tokens", "{n}: {tokens")
+              t = t.rstrip() + "\n" + ludo15 + "\n"
+              print("Added Ludo15")
+
+          # Improve Whot special messaging if simple WhotTable exists
+          if "General Market" not in t and "function WhotTable" in t:
+              t = t.replace(
+                  'setMsg(`Played ${c.num} ${c.shape}`);',
+                  '''if (c.num === 20) setMsg("WHOT! Call a shape");
+      else if (c.num === 1) setMsg("Hold On — play again");
+      else if (c.num === 2) setMsg("Pick Two");
+      else if (c.num === 8) setMsg("Suspension");
+      else if (c.num === 14) setMsg("General Market");
+      else setMsg(`Played ${c.num} ${c.shape}`);''',
+                  1,
+              )
+              print("Whot special card messages")
+
+          p.write_text(t, encoding="utf-8")
+          print("saved", p.stat().st_size)
+          PY
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/features/games/GamesHub.tsx
+          git commit -m "Games: research Ludo 15x15 cross board + Whot specials" || exit 0
+          git push origin HEAD:main

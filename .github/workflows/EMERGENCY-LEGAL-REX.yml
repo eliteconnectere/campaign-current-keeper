@@ -1,0 +1,23 @@
+name: EMERGENCY Legal Rex Updates
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-LEGAL-REX.yml'
+      - 'scripts/update_legal_learn_dyk_rex.py'
+      - 'src/routes/rex.index.tsx'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/update_legal_learn_dyk_rex.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Content: /rex agent guide, legal dates 9 Nov 2026, 75 Gmail, Rex DYK cards" || exit 0
+          git push origin HEAD:main

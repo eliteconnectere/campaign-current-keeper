@@ -1,0 +1,18 @@
+create table if not exists public.team_seats (
+  id uuid primary key default gen_random_uuid(),
+  owner_user_id uuid not null,
+  member_email text not null,
+  member_user_id uuid null,
+  status text not null default 'pending'
+    check (status in ('pending', 'active', 'revoked')),
+  invite_token text not null unique,
+  created_at timestamptz not null default now(),
+  accepted_at timestamptz null,
+  unique (owner_user_id, member_email)
+);
+grant all on public.team_seats to service_role;
+alter table public.team_seats enable row level security;
+create index if not exists team_seats_owner_idx on public.team_seats (owner_user_id);
+create index if not exists team_seats_member_email_idx on public.team_seats (lower(member_email));
+create index if not exists team_seats_member_user_idx on public.team_seats (member_user_id) where member_user_id is not null;
+create index if not exists team_seats_token_idx on public.team_seats (invite_token);

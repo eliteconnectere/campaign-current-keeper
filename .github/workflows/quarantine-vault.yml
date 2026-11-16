@@ -1,0 +1,24 @@
+name: Quarantine Leads Vault
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/apply-quarantine-vault.py'
+      - '.github/workflows/quarantine-vault.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Quarantine Vault script
+        run: |
+          python3 scripts/apply-quarantine-vault.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/app.tsx
+          git commit -m "feat: Quarantine Leads Vault + Elite skip risky + Standard recovery" || exit 0
+          git push origin HEAD:main

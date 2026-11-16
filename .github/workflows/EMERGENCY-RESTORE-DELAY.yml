@@ -1,0 +1,29 @@
+name: EMERGENCY Restore Before Delay Break
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-RESTORE-DELAY.yml'
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore app.tsx from last known working commit
+        run: |
+          set -eux
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # b4dae39 was last good before delay-from-send-start runtime break
+          git show b4dae39258119e66339eb57986c50c6ab373220a:src/routes/app.tsx > src/routes/app.tsx
+          wc -l src/routes/app.tsx
+          head -2 src/routes/app.tsx
+          grep -q "PLACEHOLDER" src/routes/app.tsx && exit 1 || true
+          test $(wc -l < src/routes/app.tsx) -gt 3000
+          git add src/routes/app.tsx
+          git commit -m "EMERGENCY: restore app.tsx to pre-delay-break working version" || exit 0
+          git push origin HEAD:main

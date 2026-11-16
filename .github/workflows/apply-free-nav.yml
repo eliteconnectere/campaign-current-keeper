@@ -1,0 +1,23 @@
+name: apply-free-nav
+on:
+  push:
+    paths:
+      - 'scripts/apply-free-nav.py'
+      - '.github/workflows/apply-free-nav.yml'
+  workflow_dispatch:
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/apply-free-nav.py
+      - name: Commit
+        run: |
+          git config user.name eliteconnectere
+          git config user.email eliteconnectere@gmail.com
+          git add src/features/assist/EliteAssist.tsx src/lib/assist.functions.ts
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "feat(rex): free navigation — direct GO open, reason without FAQ rails"
+          git push origin HEAD:main

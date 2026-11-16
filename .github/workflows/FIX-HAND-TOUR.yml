@@ -1,0 +1,23 @@
+name: Fix Hand Tour
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/FIX_HAND_TOUR.py'
+      - '.github/workflows/FIX-HAND-TOUR.yml'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/FIX_HAND_TOUR.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo no changes; exit 0; fi
+          git commit -m "Hand tour: 18 ordered steps, exact data-tour targets, Settings no forced tip"
+          git push origin HEAD:main

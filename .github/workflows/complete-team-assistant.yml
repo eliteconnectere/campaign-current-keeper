@@ -1,0 +1,21 @@
+name: Complete Team Assistant Update
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/complete-team-assistant-update.py'
+      - '.github/workflows/complete-team-assistant.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/complete-team-assistant-update.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: assistant edit cap, celebrate modal, isAssistant, penalty hooks" || exit 0
+          git push origin HEAD:main

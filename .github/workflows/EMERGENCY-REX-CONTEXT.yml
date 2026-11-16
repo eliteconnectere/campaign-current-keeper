@@ -1,0 +1,22 @@
+name: EMERGENCY Rex Context
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-REX-CONTEXT.yml'
+      - 'scripts/fix_rex_context_and_typed_approve.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/fix_rex_context_and_typed_approve.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix: live chat context when memory off; typed yes approves; smarter More details" || exit 0
+          git push origin HEAD:main

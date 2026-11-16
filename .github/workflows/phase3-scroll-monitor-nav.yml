@@ -1,0 +1,201 @@
+name: Phase3 Scroll Monitor Nav
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch app.tsx scroll-to-top + snippets-add + rex-monitor
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path('src/routes/app.tsx')
+          t = path.read_text()
+          if 'function scrollRexDestination' not in t:
+              helper = '''
+  function scrollRexDestination(selector?: string) {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      const main = document.querySelector("[data-ec-main-scroll]") as HTMLElement | null;
+      main?.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+      const menu = document.querySelector("[data-ec-menu-scroll]") as HTMLElement | null;
+      menu?.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+      if (selector) {
+        window.setTimeout(() => {
+          document.querySelector(selector)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+      }
+    } catch { /* scroll optional */ }
+  }
+'''
+              # Insert helper before onGo
+              marker = 'onGo={(p: AssistPlace) => {'
+              if marker not in t:
+                  raise SystemExit('onGo marker missing')
+              t = t.replace(marker, helper + '\n          ' + marker, 1)
+              print('inserted scrollRexDestination helper')
+          else:
+              print('scroll helper already present')
+
+          # Force scroll at start of every onGo (after setRexReturnAvailable block)
+          inject = '''onGo={(p: AssistPlace) => {
+            setRexReturnAvailable(true);
+            scrollRexDestination();
+            const activeRexId'''
+          if 'scrollRexDestination();' not in t.split('onGo={(p: AssistPlace)')[1][:400]:
+              t = t.replace(
+                  'onGo={(p: AssistPlace) => {\n            setRexReturnAvailable(true);\n            const activeRexId',
+                  inject,
+                  1,
+              )
+              print('injected scroll at onGo start')
+          else:
+              print('onGo scroll already injected')
+
+          # snippets-add branch if missing
+          if 'snippets-add' not in t:
+              old = '} else if (p === "radar" || p === "vault" || p === "snippets" || p === "monitor") {\n              setRadarTab(p);\n              setRadarOpen(true); showPanelTip("radar");'
+              new = '''} else if (p === "snippets-add") {
+              setRadarTab("snippets");
+              setRadarOpen(true);
+              showPanelTip("radar");
+              window.setTimeout(() => {
+                try { window.dispatchEvent(new CustomEvent("ec-snippets-add-open")); } catch {}
+              }, 120);
+            } else if (p === "rex-monitor") {
+              setRexStudioOpen(true);
+              window.setTimeout(() => document.querySelector("[data-rex-monitor]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+            } else if (p === "radar" || p === "vault" || p === "snippets" || p === "monitor") {
+              setRadarTab(p);
+              setRadarOpen(true); showPanelTip("radar");'''
+              if old in t:
+                  t = t.replace(old, new, 1)
+                  print('added snippets-add and rex-monitor branches')
+              else:
+                  print('radar branch pattern not found; try alternate')
+                  # softer insert before radar
+                  alt = 'else if (p === "radar" || p === "vault" || p === "snippets" || p === "monitor")'
+                  if alt in t and 'snippets-add' not in t:
+                      t = t.replace(alt, 'else if (p === "snippets-add") {\n              setRadarTab("snippets");\n              setRadarOpen(true);\n              showPanelTip("radar");\n              window.setTimeout(() => { try { window.dispatchEvent(new CustomEvent("ec-snippets-add-open")); } catch {} }, 120);\n            } else if (p === "rex-monitor") {\n              setRexStudioOpen(true);\n              window.setTimeout(() => document.querySelector("[data-rex-monitor]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);\n            } else if (p === "radar" || p === "vault" || p === "snippets" || p === "monitor")', 1)
+                      print('alternate snippets-add insert ok')
+          path.write_text(t)
+          print('app.tsx size', path.stat().st_size)
+          PY
+      - name: Patch assist.functions explicit GO + allowlist
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path('src/lib/assist.functions.ts')
+          t = path.read_text()
+          # Expand allowedGo
+          if '"snippets-add"' not in t:
+              t = t.replace(
+                  '"appeals",',
+                  '"appeals", "snippets-add", "rex-monitor",',
+                  1,
+              )
+              print('allowedGo expanded')
+          rule = "CRITICAL: Emit navigate_to / [[GO:]] ONLY when the user explicitly asked to open, go to, take them to, show, or land on a place. Do NOT navigate when only listing capabilities or offering suggestions."
+          if rule not in t:
+              # insert near navigation free reasoning line
+              anchor = "Navigation is free reasoning, not a keyword router."
+              if anchor in t:
+                  t = t.replace(anchor, anchor + " " + rule, 1)
+                  print('explicit GO rule added')
+              else:
+                  print('anchor missing')
+          path.write_text(t)
+          print('assist size', path.stat().st_size)
+          PY
+      - name: Snippets add-open listener in EliteRadarHub
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path('src/features/radar/EliteRadarHub.tsx')
+          t = path.read_text()
+          if 'ec-snippets-add-open' not in t:
+              # add useEffect import if needed
+              if 'useEffect' not in t.split('from "react"')[0] and 'useState' in t:
+                  t = t.replace('import { useState } from "react";', 'import { useEffect, useState } from "react";', 1)
+              inject = '''
+  useEffect(() => {
+    const openAdd = () => { setTab("snippets"); setAddOpen(true); };
+    window.addEventListener("ec-snippets-add-open", openAdd as EventListener);
+    return () => window.removeEventListener("ec-snippets-add-open", openAdd as EventListener);
+  }, []);
+'''
+              marker = 'const [newCat, setNewCat] = useState<string>("friendly");'
+              if marker in t:
+                  t = t.replace(marker, marker + inject, 1)
+                  print('snippets listener added')
+              else:
+                  print('marker missing')
+          path.write_text(t)
+          PY
+      - name: Campaign monitor foundation in campaign.functions
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path('src/lib/campaign.functions.ts')
+          t = path.read_text()
+          if 'rex_monitored' not in t and 'controlRexManagedCampaign' in t:
+              # When pausing from non-studio path we cannot know; document in handler:
+              # if campaign has rex_monitored true, only allow control from Studio (already the only path for controlRexManagedCampaign)
+              # Add optional setRexCampaignMonitor export
+              if 'export const setRexCampaignMonitor' not in t:
+                  append = '''
+
+/** Toggle Rex Monitor on an approved/running campaign. Only Rex Studio should call this. */
+export const setRexCampaignMonitor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { campaignId: string; monitored: boolean }) => {
+    const campaignId = String(input?.campaignId ?? "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error("Invalid campaign.");
+    return { campaignId, monitored: input.monitored === true };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin as any;
+    const { data: campaign, error: loadError } = await db.from("campaigns")
+      .select("id,status")
+      .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
+    if (loadError || !campaign) throw new Error("Campaign not found in your account.");
+    if (!["queued", "running", "paused", "pending_approval"].includes(campaign.status)) {
+      throw new Error("Rex Monitor can only attach to an active or approvable campaign.");
+    }
+    const now = new Date().toISOString();
+    const { data: updated, error } = await db.from("campaigns").update({
+      rex_monitored: data.monitored,
+      last_error: data.monitored
+        ? "Rex Monitor is on. This run continues across sessions; pause/stop only from Rex Studio."
+        : "Rex Monitor was turned off from Rex Studio.",
+      updated_at: now,
+    }).eq("id", data.campaignId).eq("user_id", context.userId).select("id,status,rex_monitored").maybeSingle();
+    if (error) {
+      // Column may not exist yet — soft fail with clear message
+      throw new Error("Could not update Rex Monitor. Ensure campaigns.rex_monitored exists, or run the monitor migration.");
+    }
+    if (!updated) throw new Error("Could not update Rex Monitor on this campaign.");
+    return { ok: true as const, campaign: updated };
+  });
+'''
+                  path.write_text(t + append)
+                  print('setRexCampaignMonitor appended')
+              else:
+                  print('setRexCampaignMonitor already exists')
+          else:
+              print('monitor patch skip')
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Phase3: scroll-to-top on Rex nav, snippets-add, explicit GO, monitor foundation" || exit 0
+          git push origin HEAD:main

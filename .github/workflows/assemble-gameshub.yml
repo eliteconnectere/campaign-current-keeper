@@ -1,0 +1,30 @@
+name: Assemble GamesHub
+on:
+  push:
+    paths:
+      - 'scripts/gameshub-parts/**'
+      - '.github/workflows/assemble-gameshub.yml'
+  workflow_dispatch:
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble
+        run: |
+          python3 << 'END'
+          import base64, pathlib
+          parts = sorted(pathlib.Path("scripts/gameshub-parts").glob("part*"))
+          b64 = "".join(p.read_text().strip() for p in parts)
+          pathlib.Path("src/features/games").mkdir(parents=True, exist_ok=True)
+          pathlib.Path("src/features/games/GamesHub.tsx").write_bytes(base64.b64decode(b64))
+          print("size", pathlib.Path("src/features/games/GamesHub.tsx").stat().st_size)
+          END
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/features/games/GamesHub.tsx
+          git commit -m "Games: fullscreen, 4 games, CPU, sounds, Whot specials" || exit 0
+          git push origin HEAD:main

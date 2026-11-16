@@ -1,0 +1,66 @@
+name: Restore assist from good commit
+on:
+  workflow_dispatch:
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore assist.functions.ts from good commit
+        run: |
+          git checkout 7e624a3d15d53a621bb7ac71cb0dc4422097bd98 -- src/lib/assist.functions.ts
+          wc -c src/lib/assist.functions.ts
+      - name: Apply Phase 1+2 patches
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path("src/lib/assist.functions.ts")
+          text = path.read_text()
+          old_allowed = '''  const allowedGo = new Set([
+    "workspace", "workspace-menu", "logout", "recipients", "recipient-valid", "recipient-duplicate", "recipient-risky",
+    "campaign-execution", "campaign-progress", "connect-gmail", "appearance",
+    "support", "admin", "activity", "notifications-bell", "radar",
+    "monitor", "vault", "quarantine", "snippets", "planner", "tracker",
+    "tracker-skipped", "tracker-failed", "tracker-completed", "tracker-paused", "tracker-running","tracker-today", "activity-campaign", "activity-system",
+    "smartfill", "sending", "studio", "rex-studio", "hotspot", "protection",
+    "notifications", "subscription", "upgrade", "scope", "history",
+    "tools", "settings", "chat", "tour", "learn-more", "privacy", "terms",
+    "appeals",
+  ]);'''
+          new_allowed = '''  const allowedGo = new Set([
+    "workspace", "workspace-menu", "logout", "recipients", "recipient-valid", "recipient-duplicate", "recipient-risky",
+    "campaign-execution", "campaign-progress", "connect-gmail", "appearance",
+    "support", "admin", "activity", "notifications-bell", "radar",
+    "monitor", "vault", "quarantine", "snippets", "planner", "tracker",
+    "tracker-skipped", "tracker-failed", "tracker-completed", "tracker-paused", "tracker-running", "tracker-today",
+    "activity-campaign", "activity-system",
+    "smartfill", "sending", "studio", "rex-studio", "rex-memory", "hotspot", "protection",
+    "notifications", "subscription", "upgrade", "scope", "history",
+    "tools", "settings", "chat", "chat-settings", "tour", "learn-more", "privacy", "terms",
+    "appeals", "night-mode", "gmail-profiles", "delay-settings", "templates",
+  ]);'''
+          if old_allowed not in text:
+              print("allowedGo block missing or already patched")
+          else:
+              text = text.replace(old_allowed, new_allowed, 1)
+              print("allowedGo patched")
+          marker = "Sending-capacity checks refer to Elite Connectere's protected per-Gmail daily allowance."
+          extra = "\n- SAFE navigation is automatic; SENSITIVE actions (send/schedule/stop campaign, delete, disconnect, private-chat send) require the red approval control.\n- For execute goals with deadlines (e.g. before 4 o'clock), check capacity, profiles, delay and time remaining; if impossible, explain readable reasons.\n- Accept lists from chat text or CSV/TXT upload; validate; keep valid; route risky toward Quarantine Vault when supported.\n"
+          if marker in text and "SAFE navigation is automatic" not in text:
+              text = text.replace(marker, marker + extra, 1)
+              print("campaign guidance patched")
+          path.write_text(text)
+          print("final size", path.stat().st_size)
+          PY
+      - name: Commit
+        run: |
+          git config user.name "eliteconnectere"
+          git config user.email "eliteconnectere@gmail.com"
+          git add src/lib/assist.functions.ts
+          git commit -m "Restore assist.functions.ts + Phase 1/2 agent rules" || echo "no change"
+          git push

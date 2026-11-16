@@ -1,0 +1,22 @@
+name: EMERGENCY Fix React 310
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/EMERGENCY-FIX-310.yml'
+      - 'scripts/EMERGENCY_fix_react_310.py'
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/EMERGENCY_fix_react_310.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "HOTFIX: remove illegal useEffect (React #310 app crash)" || exit 0
+          git push origin HEAD:main

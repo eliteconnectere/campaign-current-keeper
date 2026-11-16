@@ -1,0 +1,26 @@
+name: Apply Safety & Reputation Fixes
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/apply-safety-fixes.mjs'
+      - '.github/workflows/apply-safety-fixes.yml'
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          node scripts/apply-safety-fixes.mjs
+          git add src/features/data.ts src/lib/gmail.functions.ts src/routes/app.tsx
+          git commit -m "Apply safety: typo domain shield, dedupe, unsubscribe footer, protection copy" || exit 0
+          git push origin HEAD:main

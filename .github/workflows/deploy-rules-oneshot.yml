@@ -1,0 +1,12 @@
+name: Deploy Rules Games One Shot
+on:
+  workflow_dispatch:
+jobs:
+  d:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: note
+        run: echo 'use manual dispatch after parts'

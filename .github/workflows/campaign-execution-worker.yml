@@ -1,0 +1,63 @@
+name: Campaign execution worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/campaign-execution-worker.yml"
+      - "src/routes/api/public/process-campaigns.ts"
+  schedule:
+    # Supabase is the primary one-minute dispatcher; GitHub Actions is a
+    # separately authenticated backup dispatcher every five minutes.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# Prevent scheduled backup runs from stacking up. The eight bounded jobs
+# still run in parallel within each workflow run.
+concurrency:
+  group: campaign-execution-worker
+  cancel-in-progress: false
+
+jobs:
+  process-approved-campaigns:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        worker: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - name: Request short-lived GitHub OIDC token
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail-with-body --silent --show-error \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=eliteconnectere-campaign-worker")"
+          token="$(jq -r '.value // empty' <<< "$response")"
+          if [ -z "$token" ]; then
+            echo "::error::GitHub did not issue the campaign worker identity token."
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Process due campaign batch (worker ${{ matrix.worker }})
+        env:
+          WORKER_TOKEN: ${{ steps.oidc.outputs.token }}
+          WORKER_SLOT: ${{ matrix.worker }}
+        run: |
+          set -euo pipefail
+          # Small stagger reduces eight simultaneous cold-start bursts.
+          sleep "$((WORKER_SLOT - 1))"
+          curl --fail-with-body --silent --show-error \
+            --max-time 55 \
+            --request GET \
+            --header "Authorization: Bearer ${WORKER_TOKEN}" \
+            "https://eliteconnectere.site/api/public/process-campaigns"

@@ -1,0 +1,93 @@
+name: Restore app.tsx + Safe Auth Fix
+on:
+  workflow_dispatch:
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore app.tsx from last READY commit and apply safe home redirect
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Restoring app.tsx from e49524a..."
+          git checkout e49524a6193c547098bdc1ca9705c62d55084136 -- src/routes/app.tsx
+          wc -l src/routes/app.tsx
+
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("src/routes/index.tsx")
+          t = p.read_text(encoding="utf-8")
+          if "function HomeEntry" not in t:
+              t = t.replace(
+                  'import { createFileRoute, Link } from "@tanstack/react-router";',
+                  'import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";\nimport { useEffect, useState } from "react";\nimport { supabase } from "@/integrations/supabase/client";',
+                  1,
+              )
+              t = t.replace(
+                  "component: GOOGLE_REVIEW_MODE ? ReviewLanding : Landing,",
+                  "component: GOOGLE_REVIEW_MODE ? ReviewLanding : HomeEntry,",
+                  1,
+              )
+              gate = '''
+function HomeEntry() {
+  const navigate = useNavigate();
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      if (data.session) {
+        setAuthed(true);
+        void navigate({ to: "/app" });
+      } else setReady(true);
+    });
+    return () => { cancelled = true; };
+  }, [navigate]);
+  if (authed || !ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-[13px] text-ink-soft">
+        Opening workspace…
+      </div>
+    );
+  }
+  return <Landing />;
+}
+
+'''
+              t = t.replace("function Landing()", gate + "function Landing()", 1)
+              p.write_text(t, encoding="utf-8")
+              print("index HomeEntry OK")
+          else:
+              print("HomeEntry already present")
+
+          for path in ["src/routes/privacy.tsx", "src/routes/terms.tsx", "src/routes/learn-more.tsx"]:
+              f = Path(path)
+              if not f.exists():
+                  continue
+              x = f.read_text(encoding="utf-8")
+              y = x.replace(
+                  'to="/" className="text-[12.5px] font-semibold text-brand">\n            Back to app',
+                  'to="/app" className="text-[12.5px] font-semibold text-brand">\n            Back to app',
+              )
+              y = y.replace(
+                  'to="/" className="text-sm font-semibold text-brand hover:underline">\n            ← Back to Elite Connectere',
+                  'to="/app" className="text-sm font-semibold text-brand hover:underline">\n            ← Back to workspace',
+              )
+              if y != x:
+                  f.write_text(y, encoding="utf-8")
+                  print("fixed", path)
+          PY
+
+          git add src/routes/app.tsx src/routes/index.tsx src/routes/privacy.tsx src/routes/terms.tsx src/routes/learn-more.tsx
+          git status
+          git commit -m "Fix: restore good app.tsx + logged-in home -> /app" || exit 0
+          git push origin HEAD:main
