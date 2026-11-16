@@ -208,6 +208,8 @@ export type Database = {
           name: string
           next_run_at: string
           paused_at: string | null
+          permanent_send_protection: boolean
+          rex_monitored: boolean
           scheduled_at: string | null
           sent_count: number
           started_at: string | null
@@ -216,6 +218,8 @@ export type Database = {
           total_recipients: number
           updated_at: string
           user_id: string
+          worker_lease_token: string | null
+          worker_lease_until: string | null
         }
         Insert: {
           approved_at?: string | null
@@ -229,6 +233,8 @@ export type Database = {
           name: string
           next_run_at?: string
           paused_at?: string | null
+          permanent_send_protection?: boolean
+          rex_monitored?: boolean
           scheduled_at?: string | null
           sent_count?: number
           started_at?: string | null
@@ -237,6 +243,8 @@ export type Database = {
           total_recipients?: number
           updated_at?: string
           user_id: string
+          worker_lease_token?: string | null
+          worker_lease_until?: string | null
         }
         Update: {
           approved_at?: string | null
@@ -250,6 +258,8 @@ export type Database = {
           name?: string
           next_run_at?: string
           paused_at?: string | null
+          permanent_send_protection?: boolean
+          rex_monitored?: boolean
           scheduled_at?: string | null
           sent_count?: number
           started_at?: string | null
@@ -257,6 +267,47 @@ export type Database = {
           subject?: string
           total_recipients?: number
           updated_at?: string
+          user_id?: string
+          worker_lease_token?: string | null
+          worker_lease_until?: string | null
+        }
+        Relationships: []
+      }
+      chat_energy_pools: {
+        Row: {
+          energy: number
+          owner_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          energy?: number
+          owner_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          energy?: number
+          owner_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      chat_energy_sessions: {
+        Row: {
+          active_since: string
+          active_until: string
+          owner_user_id: string
+          user_id: string
+        }
+        Insert: {
+          active_since?: string
+          active_until?: string
+          owner_user_id: string
+          user_id: string
+        }
+        Update: {
+          active_since?: string
+          active_until?: string
+          owner_user_id?: string
           user_id?: string
         }
         Relationships: []
@@ -371,6 +422,69 @@ export type Database = {
           updated_at?: string
           user_id?: string
           username?: string
+        }
+        Relationships: []
+      }
+      company_team_notifications: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      company_team_seats: {
+        Row: {
+          accepted_at: string | null
+          created_at: string
+          id: string
+          invite_token: string
+          member_email: string
+          member_user_id: string | null
+          owner_user_id: string
+          revoked_at: string | null
+          status: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          created_at?: string
+          id?: string
+          invite_token: string
+          member_email: string
+          member_user_id?: string | null
+          owner_user_id: string
+          revoked_at?: string | null
+          status?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          created_at?: string
+          id?: string
+          invite_token?: string
+          member_email?: string
+          member_user_id?: string | null
+          owner_user_id?: string
+          revoked_at?: string | null
+          status?: string
         }
         Relationships: []
       }
@@ -596,6 +710,54 @@ export type Database = {
         }
         Relationships: []
       }
+      rex_action_approvals: {
+        Row: {
+          approved_at: string | null
+          created_at: string
+          executed_at: string | null
+          expires_at: string
+          id: string
+          plan: Json
+          plan_hash: string
+          request_id: string
+          result: Json | null
+          status: string
+          summary: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          created_at?: string
+          executed_at?: string | null
+          expires_at?: string
+          id?: string
+          plan: Json
+          plan_hash: string
+          request_id?: string
+          result?: Json | null
+          status?: string
+          summary: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          created_at?: string
+          executed_at?: string | null
+          expires_at?: string
+          id?: string
+          plan?: Json
+          plan_hash?: string
+          request_id?: string
+          result?: Json | null
+          status?: string
+          summary?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       rex_conversation_messages: {
         Row: {
           content: string
@@ -661,35 +823,219 @@ export type Database = {
         }
         Relationships: []
       }
-      rex_events: {
+      rex_dynamic_feature_data: {
         Row: {
           created_at: string
-          detail: string
+          data: Json
+          feature_id: string
           id: string
-          kind: string
-          resolved_at: string | null
-          severity: string
-          title: string
+          updated_at: string
           user_id: string
         }
         Insert: {
           created_at?: string
-          detail: string
+          data?: Json
+          feature_id: string
           id?: string
-          kind: string
-          resolved_at?: string | null
-          severity?: string
-          title: string
+          updated_at?: string
           user_id: string
         }
         Update: {
           created_at?: string
-          detail?: string
+          data?: Json
+          feature_id?: string
           id?: string
-          kind?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rex_dynamic_feature_data_feature_id_user_id_fkey"
+            columns: ["feature_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "rex_dynamic_features"
+            referencedColumns: ["id", "user_id"]
+          },
+        ]
+      }
+      rex_dynamic_features: {
+        Row: {
+          blueprint: Json
+          created_at: string
+          description: string
+          id: string
+          name: string
+          published_at: string | null
+          slug: string
+          status: string
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          blueprint?: Json
+          created_at?: string
+          description?: string
+          id?: string
+          name: string
+          published_at?: string | null
+          slug: string
+          status?: string
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          blueprint?: Json
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          published_at?: string | null
+          slug?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      rex_events: {
+        Row: {
+          action_id: string | null
+          correlation_id: string | null
+          created_at: string
+          detail: string
+          event_key: string | null
+          id: string
+          kind: string
+          metadata: Json
+          occurred_at: string
+          resolved_at: string | null
+          severity: string
+          source: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          action_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          detail: string
+          event_key?: string | null
+          id?: string
+          kind: string
+          metadata?: Json
+          occurred_at?: string
           resolved_at?: string | null
           severity?: string
+          source?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          action_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          detail?: string
+          event_key?: string | null
+          id?: string
+          kind?: string
+          metadata?: Json
+          occurred_at?: string
+          resolved_at?: string | null
+          severity?: string
+          source?: string
           title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      rex_execution_jobs: {
+        Row: {
+          approval_id: string
+          attempt_count: number
+          created_at: string
+          finished_at: string | null
+          id: string
+          job_type: string
+          last_error_code: string | null
+          payload: Json
+          run_after: string
+          started_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          approval_id: string
+          attempt_count?: number
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          job_type: string
+          last_error_code?: string | null
+          payload?: Json
+          run_after?: string
+          started_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          approval_id?: string
+          attempt_count?: number
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          job_type?: string
+          last_error_code?: string | null
+          payload?: Json
+          run_after?: string
+          started_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rex_execution_jobs_approval_id_fkey"
+            columns: ["approval_id"]
+            isOneToOne: false
+            referencedRelation: "rex_action_approvals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rex_memory_entries: {
+        Row: {
+          category: string
+          content: string
+          created_at: string
+          id: string
+          metadata: Json
+          searchable: unknown
+          source: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string
+          content: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          searchable?: unknown
+          source?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          searchable?: unknown
+          source?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -712,6 +1058,117 @@ export type Database = {
           save_history?: boolean
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      rex_personal_destinations: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          layout: Json
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          id?: string
+          layout?: Json
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          layout?: Json
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      rex_service_identities: {
+        Row: {
+          agent_key: string
+          created_at: string
+          display_name: string
+          id: string
+          owner_user_id: string
+          public_metadata: Json
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          agent_key?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          owner_user_id: string
+          public_metadata?: Json
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          agent_key?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          owner_user_id?: string
+          public_metadata?: Json
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      rex_service_registrations: {
+        Row: {
+          created_at: string
+          external_registration_id: string | null
+          id: string
+          last_error: string | null
+          metadata: Json
+          owner_user_id: string
+          provider: string
+          requested_scopes: string[]
+          required_owner_action: string | null
+          status: string
+          submitted_at: string | null
+          updated_at: string
+          verified_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          external_registration_id?: string | null
+          id?: string
+          last_error?: string | null
+          metadata?: Json
+          owner_user_id: string
+          provider: string
+          requested_scopes?: string[]
+          required_owner_action?: string | null
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          verified_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          external_registration_id?: string | null
+          id?: string
+          last_error?: string | null
+          metadata?: Json
+          owner_user_id?: string
+          provider?: string
+          requested_scopes?: string[]
+          required_owner_action?: string | null
+          status?: string
+          submitted_at?: string | null
+          updated_at?: string
+          verified_at?: string | null
         }
         Relationships: []
       }
@@ -754,6 +1211,30 @@ export type Database = {
         }
         Relationships: []
       }
+      team_gmail_profile_reservations: {
+        Row: {
+          created_at: string
+          expires_at: string
+          owner_user_id: string
+          reservation_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          owner_user_id: string
+          reservation_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          owner_user_id?: string
+          reservation_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       team_seats: {
         Row: {
           accepted_at: string | null
@@ -764,6 +1245,7 @@ export type Database = {
           member_email: string
           member_user_id: string | null
           owner_user_id: string
+          share_snippets: boolean
           status: string
         }
         Insert: {
@@ -775,6 +1257,7 @@ export type Database = {
           member_email: string
           member_user_id?: string | null
           owner_user_id: string
+          share_snippets?: boolean
           status?: string
         }
         Update: {
@@ -786,6 +1269,7 @@ export type Database = {
           member_email?: string
           member_user_id?: string | null
           owner_user_id?: string
+          share_snippets?: boolean
           status?: string
         }
         Relationships: []
@@ -820,6 +1304,33 @@ export type Database = {
         }
         Relationships: []
       }
+      user_data_erasure_requests: {
+        Row: {
+          confirmed_at: string | null
+          expires_at: string
+          requested_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          expires_at: string
+          requested_at?: string
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          expires_at?: string
+          requested_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_presence: {
         Row: {
           last_seen: string
@@ -835,11 +1346,156 @@ export type Database = {
         }
         Relationships: []
       }
+      workspace_snapshots: {
+        Row: {
+          revision: number
+          snapshot: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          revision?: number
+          snapshot: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          revision?: number
+          snapshot?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      cancel_user_data_erasure: { Args: never; Returns: Json }
+      claim_campaign_recipients: {
+        Args: { p_campaign_id: string; p_limit?: number; p_now?: string }
+        Returns: {
+          attempts: number
+          campaign_id: string
+          created_at: string
+          email: string
+          id: string
+          last_error: string | null
+          message_body: string | null
+          message_subject: string | null
+          next_attempt_at: string
+          recipient_name: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "campaign_recipients"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_due_campaigns:
+        | {
+            Args: {
+              p_campaign_id: string
+              p_lease_seconds: number
+              p_limit: number
+              p_now: string
+            }
+            Returns: {
+              approved_at: string | null
+              body: string
+              completed_at: string | null
+              created_at: string
+              delay_seconds: number
+              failed_count: number
+              id: string
+              last_error: string | null
+              name: string
+              next_run_at: string
+              paused_at: string | null
+              permanent_send_protection: boolean
+              rex_monitored: boolean
+              scheduled_at: string | null
+              sent_count: number
+              started_at: string | null
+              status: string
+              subject: string
+              total_recipients: number
+              updated_at: string
+              user_id: string
+              worker_lease_token: string | null
+              worker_lease_until: string | null
+            }[]
+            SetofOptions: {
+              from: "*"
+              to: "campaigns"
+              isOneToOne: false
+              isSetofReturn: true
+            }
+          }
+        | {
+            Args: {
+              p_campaign_id: string
+              p_lease_seconds: number
+              p_limit: number
+              p_max_concurrent: number
+              p_now: string
+            }
+            Returns: {
+              approved_at: string | null
+              body: string
+              completed_at: string | null
+              created_at: string
+              delay_seconds: number
+              failed_count: number
+              id: string
+              last_error: string | null
+              name: string
+              next_run_at: string
+              paused_at: string | null
+              permanent_send_protection: boolean
+              rex_monitored: boolean
+              scheduled_at: string | null
+              sent_count: number
+              started_at: string | null
+              status: string
+              subject: string
+              total_recipients: number
+              updated_at: string
+              user_id: string
+              worker_lease_token: string | null
+              worker_lease_until: string | null
+            }[]
+            SetofOptions: {
+              from: "*"
+              to: "campaigns"
+              isOneToOne: false
+              isSetofReturn: true
+            }
+          }
+      confirm_user_data_erasure: { Args: never; Returns: Json }
+      create_company_team_invite: {
+        Args: {
+          p_invite_token: string
+          p_member_email: string
+          p_owner_user_id: string
+        }
+        Returns: Json
+      }
+      create_team_hotspot_invite: {
+        Args: {
+          p_invite_token: string
+          p_max_gmail_profiles: number
+          p_member_email: string
+          p_owner_user_id: string
+          p_plan_limit: number
+        }
+        Returns: Json
+      }
       delete_chat_message_everyone: {
         Args: { _id: string }
         Returns: undefined
@@ -848,11 +1504,64 @@ export type Database = {
         Args: { _body: string; _id: string }
         Returns: undefined
       }
+      get_campaign_workspace_summary: {
+        Args: { p_user_id: string }
+        Returns: Json
+      }
       hide_chat_message: { Args: { _id: string }; Returns: undefined }
       is_chat_eligible: { Args: never; Returns: boolean }
       is_connection_member: { Args: { _cid: string }; Returns: boolean }
       mark_chat_delivered: { Args: never; Returns: undefined }
       mark_chat_read: { Args: { _cid: string }; Returns: undefined }
+      record_gmail_identity_send: {
+        Args: { p_email_key: string }
+        Returns: {
+          daily_limit: number
+          exhausted: boolean
+          used: number
+        }[]
+      }
+      reserve_team_gmail_profile_slot: {
+        Args: {
+          p_owner_user_id: string
+          p_personal_limit: number
+          p_plan_limit: number
+          p_reservation_id: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
+      revoke_team_hotspot_seat: {
+        Args: { p_owner_user_id: string; p_seat_id: string }
+        Returns: boolean
+      }
+      save_workspace_snapshot_atomic: {
+        Args: {
+          p_expected_revision: number
+          p_snapshot: Json
+          p_user_id: string
+        }
+        Returns: {
+          ok: boolean
+          revision: number
+          snapshot: Json
+          updated_at: string
+        }[]
+      }
+      start_user_data_erasure: { Args: never; Returns: Json }
+      sync_shared_chat_energy: {
+        Args: { p_active: boolean; p_owner_user_id: string; p_user_id: string }
+        Returns: number
+      }
+      update_team_hotspot_gmail_allocation: {
+        Args: {
+          p_max_gmail_profiles: number
+          p_owner_user_id: string
+          p_plan_limit: number
+          p_seat_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       [_ in never]: never
