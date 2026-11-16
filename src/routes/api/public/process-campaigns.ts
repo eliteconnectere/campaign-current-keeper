@@ -1,8 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 const CONNECTOR_ID = "google_mail";
-const MAX_PER_RUN = 6;
-const WORKER_BUDGET_MS = 45_000;
+// Each worker handles many campaigns in parallel; each campaign keeps sending
+// until the worker's time budget ends. Cron fans out enough workers for thousands
+// of simultaneous campaigns, and leases guarantee one worker per campaign.
+const CAMPAIGNS_PER_WORKER = 10;
+const MAX_PER_CAMPAIGN_RUN = 1000;
+const WORKER_BUDGET_MS = 50_000;
 const MAX_ATTEMPTS = 3;
 
 let githubJwksCache: { expiresAt: number; keys: JsonWebKey[] } | null = null;
@@ -172,19 +176,21 @@ async function processCampaigns(onlyCampaignId?: string) {
   // Claim one whole campaign atomically. Parallel worker instances receive
   // different campaigns; the lease expires automatically if an instance dies.
   const { data: campaigns, error } = await (supabaseAdmin as any).rpc("claim_due_campaigns", {
-    p_limit: 1,
+    p_limit: onlyCampaignId ? 1 : CAMPAIGNS_PER_WORKER,
     p_campaign_id: onlyCampaignId ?? null,
     p_now: now,
     p_lease_seconds: 120,
-    p_max_concurrent: 8,
+    p_max_concurrent: 100000,
   });
   if (error) return Response.json({ ok: false, error: "Unable to load approved campaigns." }, { status: 500 });
 
   let processed = 0;
   let completed = 0;
   let paused = 0;
-  for (const campaign of campaigns ?? []) {
-    if (processed >= MAX_PER_RUN || Date.now() - workerStartedAt >= WORKER_BUDGET_MS) break;
+  await Promise.all((campaigns ?? []).map(async (campaign: any) => {
+    if (Date.now() - workerStartedAt >= WORKER_BUDGET_MS) { await releaseCampaignLease(supabaseAdmin, campaign); return; }
+    let campaignProcessed = 0;
+    try {
     const access = await campaignOwnerAccess(campaign.user_id, supabaseAdmin);
     if (!access.allowed) {
       const detail = access.reason;
@@ -212,7 +218,7 @@ async function processCampaigns(onlyCampaignId?: string) {
         paused += 1;
       }
       await releaseCampaignLease(supabaseAdmin, campaign);
-      continue;
+      return;
     }
     const [{ listProfileRows, listProfileViews, decryptKey, recordSend }, google, safety] = await Promise.all([
       import("@/server/gmailProfiles.server"),
@@ -233,7 +239,7 @@ async function processCampaigns(onlyCampaignId?: string) {
       });
       paused += 1;
       await releaseCampaignLease(supabaseAdmin, campaign);
-      continue;
+      return;
     }
 
     const profileRows = await listProfileRows(campaign.user_id, CONNECTOR_ID);
@@ -245,7 +251,7 @@ async function processCampaigns(onlyCampaignId?: string) {
     const profiles = profileRows.map((row) => ({ row, usage: viewById.get(row.id) }))
       .filter((item) => item.usage && !item.usage.exhausted && item.usage.used < item.usage.limit)
       .sort((a, b) => (a.usage!.used - b.usage!.used) || (a.row.slot - b.row.slot))
-      .slice(0, 15);
+;
     if (profiles.length === 0) {
       if (profileRows.length === 0) {
         const detail = "Connect a Gmail sending account to continue this approved campaign.";
@@ -269,7 +275,7 @@ async function processCampaigns(onlyCampaignId?: string) {
         }).eq("id", campaign.id).in("status", ["queued", "running"]);
       }
       await releaseCampaignLease(supabaseAdmin, campaign);
-      continue;
+      return;
     }
 
     await (supabaseAdmin as any).from("campaigns").update({
@@ -293,7 +299,7 @@ async function processCampaigns(onlyCampaignId?: string) {
     // Claim one recipient at a time with SKIP LOCKED. This lets multiple worker
     // instances safely share a campaign without double-claiming, and avoids
     // leaving a batch marked "sending" if this invocation reaches its time budget.
-    while (processed < MAX_PER_RUN && Date.now() - workerStartedAt < WORKER_BUDGET_MS) {
+    while (campaignProcessed < MAX_PER_CAMPAIGN_RUN && Date.now() - workerStartedAt < WORKER_BUDGET_MS - paceMs) {
       // Respect a Studio pause/stop immediately between recipient sends. A worker
       // already in flight must not overwrite the owner's control state afterward.
       const { data: controlState } = await (supabaseAdmin as any).from("campaigns")
@@ -324,6 +330,7 @@ async function processCampaigns(onlyCampaignId?: string) {
       const recipient = claimedRecipients?.[0];
       if (!recipient) break;
       processed += 1;
+      campaignProcessed += 1;
       let deliveryOutcomeMayHaveSucceeded = false;
       try {
         const recipientSubject = String(recipient.message_subject ?? campaign.subject);
@@ -381,6 +388,7 @@ async function processCampaigns(onlyCampaignId?: string) {
               break;
             }
             lastError = new Error(`Gmail rejected the message (${response.status}).`);
+            if (response.status === 401) google.forgetAccessToken(decryptKey(candidate.row));
             if (response.status === 401 || response.status === 403) continue;
           } catch (error) {
             lastError = error instanceof Error ? error : new Error("Gmail send failed.");
@@ -461,8 +469,17 @@ async function processCampaigns(onlyCampaignId?: string) {
         }).eq("id", campaign.id);
       }
     }
+    } catch (error) {
+      // Never let one campaign's failure stop the other campaigns in this worker.
+      console.error("[campaign-worker] campaign run failed; it will resume on the next tick", {
+        campaignId: campaign.id, error: error instanceof Error ? error.message : String(error),
+      });
+      await (supabaseAdmin as any).from("campaigns").update({
+        next_run_at: new Date(Date.now() + 30_000).toISOString(), updated_at: new Date().toISOString(),
+      }).eq("id", campaign.id).in("status", ["queued", "running"]);
+    }
     await releaseCampaignLease(supabaseAdmin, campaign);
-  }
+  }));
   console.info("[campaign-worker] completed", { campaigns: campaigns?.length ?? 0, processed, completed, paused });
   return Response.json({ ok: true, campaigns: campaigns?.length ?? 0, processed, completed, paused });
 }

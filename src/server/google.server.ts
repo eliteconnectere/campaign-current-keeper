@@ -13,7 +13,24 @@ function creds() {
 export class GoogleReconnect extends Error {}
 
 /** Swap a stored refresh token for a short-lived access token. */
+// Access tokens live ~60 min. Reuse them for up to 55 min so thousands of
+// sends don't hammer Google's token endpoint (which rate-limits with 429s).
+const tokenCache = new Map<string, { token: string; scope: string; expiresAt: number }>();
+
 export async function accessTokenFor(refreshToken: string): Promise<{ token: string; scope: string }> {
+  const cached = tokenCache.get(refreshToken);
+  if (cached && cached.expiresAt > Date.now()) return { token: cached.token, scope: cached.scope };
+  const fresh = await fetchAccessToken(refreshToken);
+  if (tokenCache.size > 50_000) tokenCache.clear();
+  tokenCache.set(refreshToken, { ...fresh, expiresAt: Date.now() + 55 * 60_000 });
+  return fresh;
+}
+
+export function forgetAccessToken(refreshToken: string) {
+  tokenCache.delete(refreshToken);
+}
+
+async function fetchAccessToken(refreshToken: string): Promise<{ token: string; scope: string }> {
   const { id, secret } = creds();
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
