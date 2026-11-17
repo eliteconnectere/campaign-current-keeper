@@ -72,7 +72,7 @@ async function authorizedByGitHubActions(token: string): Promise<boolean> {
 
 async function authorized(request: Request): Promise<boolean> {
   const authorization = request.headers.get("authorization");
-  const actual = authorization?.replace(/^Bearer\\s+/i, "") || request.headers.get("x-campaign-worker-secret");
+  const actual = authorization?.replace(/^Bearer\s+/i, "") || request.headers.get("x-campaign-worker-secret");
   const workerSecret = process.env["CAMPAIGN_WORKER_SECRET"];
   const cronSecret = process.env["CRON_SECRET"];
 
