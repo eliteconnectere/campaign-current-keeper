@@ -2232,8 +2232,7 @@ function Workspace() {
               else askUpgrade("Night Mode and interface customization require Elite Studio ProMaxx.", true);
             } else if (p === "hotspot") {
               setTeamOpen(true);
-            } else if (p === "quarantine") {
-            } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools") {
+                        } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools") {
               setMenuView(p === "protection" ? "campaignProtection" : p);
               setPanel("menu");
             } else if (p === "gmail-profiles") {
