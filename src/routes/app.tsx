@@ -556,6 +556,7 @@ function Workspace() {
   const [serverCampaignCounts, setServerCampaignCounts] = useState({ sent: 0, total: 0, failed: 0 });
   const sentRecipientEmailsRef = useRef<Set<string>>(new Set());
   const [genTab, setGenTab] = useState<"all" | "sent" | "pending">("all");
+  const [generatedVisibleLimit, setGeneratedVisibleLimit] = useState(400);
 
   const [scout, setScout] = useState(false);
   const [delay, setDelay] = useState(5);
@@ -3626,7 +3627,7 @@ function Workspace() {
             </div>
 
             <div className="mt-2 max-h-[228px] divide-y divide-line overflow-y-auto rounded-xl border border-line">
-              {shownGenerated.slice(0, 400).map((g) => (
+              {shownGenerated.slice(0, generatedVisibleLimit).map((g) => (
                 <button
                   key={g.id}
                   onClick={() => undefined}
@@ -3667,6 +3668,22 @@ function Workspace() {
                 </p>
               )}
             </div>
+            {shownGenerated.length > 0 && (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-ink-soft">
+                  Showing {Math.min(generatedVisibleLimit, shownGenerated.length).toLocaleString()} of {shownGenerated.length.toLocaleString()}
+                </span>
+                {shownGenerated.length > generatedVisibleLimit && (
+                  <button
+                    type="button"
+                    onClick={() => setGeneratedVisibleLimit((current) => Math.min(current + 400, shownGenerated.length))}
+                    className="rounded-full border border-line bg-white px-3 py-1.5 text-[11px] font-semibold text-brand"
+                  >
+                    Load 400 more
+                  </button>
+                )}
+              </div>
+            )}
           </Card>
         )}
       </main>
