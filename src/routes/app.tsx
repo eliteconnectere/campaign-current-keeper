@@ -3204,8 +3204,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               {(
                 [
                   ["valid", counts.valid, ShieldCheck],
-                  ["duplicate", counts.duplicate, XCircle],
-                  ["risky", counts.risky, AlertTriangle],
+                                    ["risky", counts.risky, AlertTriangle],
                 ] as [Status, number, typeof ShieldCheck][]
               ).map(([key, n, Icon]) => {
                 return (
@@ -3481,7 +3480,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               <Card className="animate-fade-in" tourId="execute">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="flex items-center gap-1.5 text-[14px] font-semibold text-ink">
-                    <Zap className="size-4 text-brand" /> Execute Campaign In-App
+                    <Zap className="size-4 text-brand" /> Execute Campaign
                   </h2>
                   <span className="flex items-center gap-1.5 rounded-full border border-line bg-soft px-2.5 py-1 text-[10px] font-bold tracking-widest text-ink">
                     <span
@@ -3550,9 +3549,9 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
             <div className="mt-2.5 flex items-center gap-1 rounded-full border border-line bg-soft p-0.5">
               {(
                 [
-                  ["all", generated.length - sentCount],
+                  ["all", activeServerCampaignId ? serverCampaignCounts.total : generated.length],
                   ["sent", sentCount],
-                  ["pending", generated.length - sentCount],
+                  ["pending", activeServerCampaignId ? pending : generated.length - sentCount],
                 ] as ["all" | "sent" | "pending", number][]
               ).map(([key, n]) => (
                 <button
@@ -3580,7 +3579,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                       startCampaign();
                     }}
                   />
-                  <span className="text-[13px] font-semibold text-ink">Auto-Scout</span>
+                  <span className="text-[13px] font-semibold text-ink">Server Worker</span>
                 </div>
                 <span className="rounded-full border border-line bg-white px-2.5 py-1 text-[10px] font-bold tracking-widest text-ink">
                   {scout ? "RUNNING" : "IDLE"}
