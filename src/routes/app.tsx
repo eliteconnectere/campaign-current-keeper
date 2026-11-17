@@ -1911,10 +1911,12 @@ function Workspace() {
       if (!validated || generated.length === 0) { guideTo("recipients", "Validate your list first — this builds the server campaign."); return false; }
       if (!canSendElite) { guideTo("profiles", "Connect a Google account with Gmail send permission before executing."); return false; }
       const inRange = generated.filter((row) => row.id >= from && row.id <= to);
+      // Domain-flagged risky addresses remain visible for review but are never sent.
+      const sendableEmails = new Set(valid.map((recipient) => recipient.email.trim().toLowerCase()));
       const seen = new Set<string>();
       const recipientsForQueue = inRange.flatMap((row) => {
         const email = row.email.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(email) || seen.has(email)) return [];
+        if (!sendableEmails.has(email) || !/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(email) || seen.has(email)) return [];
         if (!row.subject.trim() || !row.body.trim()) return [];
         seen.add(email);
         return [{ email, name: row.name, subject: row.subject, body: row.body }];
