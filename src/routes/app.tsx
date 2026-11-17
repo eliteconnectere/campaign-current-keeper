@@ -512,7 +512,7 @@ function Workspace() {
   const cloudWorkspaceLastPayloadRef = useRef<string | null>(null);
   const [accepted, setAccepted] = useState(true);
 
-  const [mode, setMode] = useState<"standard" | "elite" | "both">("elite");
+  const [mode] = useState<"elite">("elite");
   // One-time local workspace cleanup. Preserve the Supabase Master Login:
   // newly verified users must remain signed in and continue into the workspace.
   useEffect(() => {
@@ -528,7 +528,7 @@ function Workspace() {
     const on = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       const tip = ELITE_TIPS.find((t) => t.id === id);
-      if (tip) setMode("elite");
+      
     };
     window.addEventListener("ec:show-tip", on);
     return () => window.removeEventListener("ec:show-tip", on);
@@ -1039,19 +1039,7 @@ function Workspace() {
     setPanel((p) => (p === "menu" ? "none" : "menu"));
   }
 
-  function switchMode(next: "standard" | "elite") {
-    if (next === mode || phase !== "idle") return;
-    if (next === "elite" && entitlements && !entitlements.premium && !entitlements.trialActive && !entitlements.communityPromo) {
-      askUpgrade("Your 10-day Elite Engine free trial has ended. Subscribe to keep using Elite Engine.");
-      return;
-    }
-    setPhase("out");
-    window.setTimeout(() => {
-      setMode(next);
-      setPhase("in");
-      window.setTimeout(() => setPhase("idle"), 520);
-    }, 460);
-  }
+
 
   function statusOf(p: GmailProfile): "ACTIVE" | "STANDBY" | "EXHAUSTED" {
     if (p.exhausted) return "EXHAUSTED";
@@ -1151,7 +1139,7 @@ function Workspace() {
       }
       if (cancelled) return;
       if (snapshot) {
-        if (snapshot.mode) setMode("elite");
+        
         if (typeof snapshot.raw === 'string') setRaw(snapshot.raw);
         if (snapshot.recipients) setRecipients(snapshot.recipients.map((r) => ((r.status as string) === 'invalid' ? { ...r, status: 'risky' as const } : r)));
         if (typeof snapshot.validated === 'boolean') setValidated(snapshot.validated);
@@ -1253,7 +1241,7 @@ function Workspace() {
     if (!ready || !uid) return;
     const snapshot: WorkspaceSnapshot = {
       v: 1,
-      mode: mode === "elite" ? "elite" : "standard",
+      mode: "elite",
       raw,
       recipients,
       validated,
@@ -4368,7 +4356,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
               parsed = numeric;
             } else {
               const enums: Record<string, string[]> = {
-                sendingMode: ["both","elite","standard"],
+                sendingMode: ["elite"],
                 notificationSound: ["note","bell","popcorn"],
                 sendingSoundVariant: ["air-swish","air-swish-long","air-swish-soft","soft-sweep","pass-by"],
                 alarmRingtone: ["note","bell","popcorn"],
