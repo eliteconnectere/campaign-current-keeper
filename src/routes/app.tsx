@@ -1497,8 +1497,9 @@ function Workspace() {
     risky: recipients.filter((r) => r.status === "risky").length,
   };
   const sentCount = activeServerCampaignId ? serverCampaignCounts.sent : generated.filter((g) => g.sent).length;
-  // Pending/Queued cover the whole current dataset — nothing is dropped unless the user removes it.
+  // Remaining includes pending and in-flight recipients; failures are shown separately.
   const pending = activeServerCampaignId ? Math.max(serverCampaignCounts.total - serverCampaignCounts.sent - serverCampaignCounts.failed, 0) : validated ? Math.max(generated.length - sentCount, 0) : 0;
+  const failedCount = activeServerCampaignId ? serverCampaignCounts.failed : 0;
 
   function buildGenerated(list: Recipient[]) {
     const hasA = Boolean(tplA.subject.trim() && tplA.body.trim());
@@ -3065,8 +3066,8 @@ function Workspace() {
               red
               badge={entitlements ? (entitlements.sent24h).toLocaleString() : undefined}
             />
-            <Stat value={pending.toLocaleString()} label="PENDING" />
-            <Stat value={pending.toLocaleString()} label="QUEUED" red />
+            <Stat value={pending.toLocaleString()} label="REMAINING" />
+            <Stat value={failedCount.toLocaleString()} label="FAILED" red />
           </div>
 
           {planAlert && (
