@@ -3210,12 +3210,8 @@ function Workspace() {
               )}
             </div>
             <p className="mt-1.5 text-[11px] leading-snug text-ink-soft">
-              Total {recipients.length.toLocaleString()} · Valid {counts.valid.toLocaleString()} · Duplicate{" "}
-              {counts.duplicate.toLocaleString()} · Risky {counts.risky.toLocaleString()} — nothing is removed
-              unless you choose to.
+              {recipients.length.toLocaleString()} unique addresses · {counts.valid.toLocaleString()} ready to send · {counts.risky.toLocaleString()} flagged as risky and excluded from execution.
             </p>
-}
-}
           </div>
         </Card>
 
