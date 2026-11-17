@@ -97,9 +97,16 @@ async function authorized(request: Request): Promise<boolean> {
       hasCustomHeader: Boolean(customHeader),
       hasWorkerSecretEnv: Boolean(workerSecret),
       hasCronSecretEnv: Boolean(cronSecret),
+      bearerTokenLength: cleanSecret(bearerToken).length,
+      customHeaderLength: cleanSecret(customHeader).length,
       actualLength: actual.length,
       workerSecretLength: workerSecret.length,
       cronSecretLength: cronSecret.length,
+      actualMatchesWorkerSecret: Boolean(actual && workerSecret && actual === workerSecret),
+      actualMatchesCronSecret: Boolean(actual && cronSecret && actual === cronSecret),
+      bearerMatchesWorkerSecret: Boolean(cleanSecret(bearerToken) && workerSecret && cleanSecret(bearerToken) === workerSecret),
+      customHeaderMatchesWorkerSecret: Boolean(cleanSecret(customHeader) && workerSecret && cleanSecret(customHeader) === workerSecret),
+      selectedCredential: bearerToken ? "authorization" : customHeader ? "custom-header" : "none",
     });
   }
 
