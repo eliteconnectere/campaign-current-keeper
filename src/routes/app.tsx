@@ -91,6 +91,7 @@ import {
   type WorkspaceSnapshot,
 } from "@/features/workspace/persist";
 import { Onboarding } from "@/features/workspace/Onboarding";
+import { useLongPress } from "@/features/workspace/useLongPress";
 import { AppealsPanel } from "@/features/admin/AppealsPanel";
 import { EliteTips, ELITE_TIPS, resetTour, setTourEnabled, tourDismissed, showPanelTip } from "@/features/workspace/HandTour";
 import { DidYouKnowHost } from "@/features/workspace/DidYouKnow";
@@ -1566,7 +1567,6 @@ function Workspace() {
     const done = nextGenerated.filter((g) => g.sent).length;
     toast.info(`${done} already got this exact message — skipping them. Continuing from #${firstPending}. Change subject/body to message them again.`);
   }
-    setCleanupHandled(false);
     rememberSmartFillSet(list);
     toast.success(`Validation completed: ${list.length} unique addresses ready for the server queue.`);
     return { ok: true, valid: list.length, risky: list.filter(r => r.status === "risky").length, duplicate: 0 };
@@ -1740,7 +1740,6 @@ function Workspace() {
       resetWorkspace();
       setPlanner([]);
       setSmartFillHistory([]);
-      setQuarantineVault([]);
       setNotes([]);
       setScope(50);
       setDefaultScope(50);
@@ -1752,7 +1751,6 @@ function Workspace() {
       try {
         localStorage.removeItem("ec.workspace.v2");
         localStorage.removeItem("ec.settings.v1");
-        localStorage.removeItem("ec.quarantine-vault");
         localStorage.removeItem("ec.magic.pos.v2");
         localStorage.removeItem("ec.dyk.dismissed.v1");
         localStorage.removeItem("ec.dyk.lastShown.v1");
@@ -1774,91 +1772,6 @@ function Workspace() {
       toast.error("Erasure could not be completed. No final confirmation was recorded; please retry or choose to keep your data.");
     } finally {
       setEraseBusy(false);
-    }
-  }
-
-  /** Only ever runs after the user explicitly chose to remove these groups. */
-  function removeStatuses(kinds: Recipient["status"][]) {
-    const seenEmails = new Set<string>();
-    const dropDupes = kinds.includes("duplicate");
-    const removed = recipients.filter((r) => kinds.includes(r.status));
-    archiveToVault(removed);
-    const keep = recipients.filter((r) => {
-      if (kinds.includes(r.status)) return false;
-      const key = r.email.trim().toLowerCase();
-      // Removing duplicates removes every repeat of an address, not just the label.
-      if (dropDupes && seenEmails.has(key)) return false;
-      seenEmails.add(key);
-      return true;
-    });
-    const sent = new Set(generated.filter((g) => g.sent).map((g) => g.email.toLowerCase()));
-    const nextGenerated = buildGenerated(keep).map((g) => ({ ...g, sent: sent.has(g.email.toLowerCase()) }));
-    setRecipients(keep);
-    setGenerated(nextGenerated);
-    // The send engine reads this ref — update it now so a campaign started in the
-    // same click can never pick up a removed address.
-    generatedRef.current = nextGenerated;
-    setTo((t) => Math.min(t, Math.max(keep.length, 1)));
-  }
-
-  function sendRiskyViaStandard() {
-  const riskyRecipients = recipients.filter((r) => r.status === "risky");
-  if (riskyRecipients.length === 0) {
-    toast.info("No risky recipients to send.");
-    return;
-  }
-  // Switch to Standard Mode (Mailto) so Elite Gmail accounts are completely protected
-  switchMode("standard");
-  setRecipients(riskyRecipients);
-  const nextGen = buildGenerated(riskyRecipients);
-  setGenerated(nextGen);
-  generatedRef.current = nextGen;
-  setFrom(1);
-  setTo(riskyRecipients.length);
-  setTab("risky");
-  setCleanupHandled(true);
-  setConfirming(null);
-  log(`Queued ${riskyRecipients.length} risky recipients in Standard Mode (Mailto) — protects Elite Gmail reputation`);
-  toast.success("Switched to Standard Mode", {
-    description: `Loaded ${riskyRecipients.length} risky address(es) for safe manual sending without risking connected Gmail accounts.`,
-  });
-}
-
-function removeCategory(kind: "duplicate" | "risky") {
-    removeStatuses([kind]);
-    setConfirming(null);
-    setTab("valid");
-    log(`Removed all ${kind} recipients from the list`);
-  }
-
-  function openMail(g: Generated) {
-    if (g.sent) return;
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("You're offline — reconnect to send.");
-      return;
-    }
-    const url = `googlegmail://co?to=${encodeURIComponent(g.email)}&subject=${encodeURIComponent(
-      g.subject,
-    )}&body=${encodeURIComponent(g.body)}`;
-    window.location.href = url;
-    toast.info("Opening Gmail", { description: "Your phone may ask permission to open the Gmail app." });
-    setGenerated((prev) => prev.map((x) => (x.id === g.id ? { ...x, sent: true } : x)));
-    void countStandardSend();
-  }
-
-  /** Records one Standard Mode send on the Master account (24HR + allowance). */
-  async function countStandardSend(): Promise<boolean> {
-    try {
-      const r = await recordStandardSend();
-      if (!r.ok) {
-        setPremiumReason("Your plan's sending allowance is used up. Upgrade to keep sending.");
-        return false;
-      }
-      setEntitlements((e) => (e ? { ...e, sent24h: e.sent24h + 1, used: e.used + 1 } : e));
-      return true;
-    } catch (error) {
-      console.error(error);
-      return true;
     }
   }
 
@@ -2078,12 +1991,6 @@ function removeCategory(kind: "duplicate" | "risky") {
     .replace(/[^a-zA-ZÀ-ÿ'-]/g, "")
     .replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase());
 
-  const duplicatePress = useLongPress(() => {
-    if (counts.duplicate > 0) setConfirming({ kind: "duplicate", count: counts.duplicate });
-  }, 2000);
-  const riskyPress = useLongPress(() => {
-    if (counts.risky > 0) setConfirming({ kind: "risky", count: counts.risky });
-  }, 2000);
   const plannerPress = useLongPress(() => setPlannerEditing(null));
 
 
@@ -2144,8 +2051,7 @@ function removeCategory(kind: "duplicate" | "risky") {
               setRexPersonalDestinationId(null);
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
-              setStudioOpen(false);
+                    setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
               setTeamOpen(false);
@@ -2158,7 +2064,6 @@ function removeCategory(kind: "duplicate" | "risky") {
               setAssistOpen(false);
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
               setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
@@ -2185,8 +2090,7 @@ function removeCategory(kind: "duplicate" | "risky") {
               setAssistOpen(false);
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
-              setStudioOpen(false);
+                  setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
               setTeamOpen(false);
@@ -2338,7 +2242,6 @@ function removeCategory(kind: "duplicate" | "risky") {
             } else if (p === "hotspot") {
               setTeamOpen(true);
             } else if (p === "quarantine") {
-              setVaultOpen(true);
             } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools") {
               setMenuView(p === "protection" ? "campaignProtection" : p);
               setPanel("menu");
@@ -2452,19 +2355,13 @@ function removeCategory(kind: "duplicate" | "risky") {
                         icon={Zap}
                         label="Elite Engine mode"
                         on={mode === "elite"}
-                        onClick={() => switchMode(mode === "elite" ? "standard" : "elite")}
+                        onClick={() => switchMode("elite")}
                       />
                       <MenuToggle
                         icon={Shuffle}
                         label="2-Way rotation"
                         on={twoWay}
                         onClick={() => setTwoWay((v) => !v)}
-                      />
-                      <MenuRow
-                        icon={Database}
-                        label="Quarantine Vault"
-                        sub={`${quarantineVault.length} excluded/risky leads saved`}
-                        onClick={() => { setVaultOpen(true); setPanel("none"); }}
                       />
                       <MenuRow
                         icon={ScrollText}
@@ -3163,18 +3060,16 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
         <Card className="!py-2.5">
           <div className="animate-fade-in">
             <h2 className="text-[17px] font-bold leading-tight text-ink">
-              {mode === "standard" ? "Fast Mail Send" : "Elite Engine Workspace"}
+              Campaign Workspace
             </h2>
             <p className="mt-0.5 text-[12px] leading-snug text-ink-soft">
-              {mode === "standard"
-                ? "Compile personalised mailto batches straight into your device mail client."
-                : "Automated in-app delivery across your connected Google profiles."}
+              Campaigns run through the persistent server queue and connected Google accounts.
             </p>
           </div>
 
           <div className="mt-2 inline-flex rounded-full border border-line bg-soft p-0.5">
             <button
-              onClick={() => switchMode("standard")}
+              onClick={() => switchMode("elite")}
               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-300 ${
                 mode === "standard" ? "bg-ink text-white" : "text-ink-soft"
               }`}
@@ -3227,7 +3122,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
             </li>
             <li className="flex items-center gap-1.5">
               <MailCheck className="size-3" />
-              {mode === "standard" ? "Sends from your mail app" : "Internal engine delivery"}
+              Server queue delivery
             </li>
           </ul>
         </Card>
@@ -3323,18 +3218,10 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                   ["risky", counts.risky, AlertTriangle],
                 ] as [Status, number, typeof ShieldCheck][]
               ).map(([key, n, Icon]) => {
-                const press =
-                  key === "duplicate" ? duplicatePress : key === "risky" ? riskyPress : null;
                 return (
                   <button
                     key={key}
-                    onPointerDown={press?.onPointerDown}
-                    onPointerUp={press?.onPointerUp}
-                    onPointerLeave={press?.onPointerLeave}
-                    onPointerCancel={press?.onPointerCancel}
-                    onContextMenu={press?.onContextMenu}
                     onClick={() => {
-                      if (press?.consumed()) return;
                       setTab(key);
                     }}
                     className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${
@@ -3381,36 +3268,8 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               {counts.duplicate.toLocaleString()} · Risky {counts.risky.toLocaleString()} — nothing is removed
               unless you choose to.
             </p>
-            {(counts.duplicate > 0 || counts.risky > 0) && (
-              <p className="mt-1 text-[11px] leading-snug text-ink-soft">
-                Press and hold Duplicate or Risky to remove that whole group.
-              </p>
-            )}
-            {(counts.risky > 0 || quarantineVault.length > 0) && (
-              <div className="mt-2 flex items-center justify-between rounded-xl border border-brand/30 bg-brand-soft p-2.5 text-[11.5px] text-ink">
-                <span className="leading-tight">
-                  <strong>{counts.risky > 0 ? `${counts.risky} Risky` : `${quarantineVault.length} Quarantined`}</strong>: saved safely in Vault to protect your Gmail reputation.
-                </span>
-                <div className="flex gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setVaultOpen(true)}
-                    className="rounded-lg border border-brand/40 bg-white px-2 py-1 text-[11px] font-semibold text-ink hover:bg-brand-soft"
-                  >
-                    Open Vault
-                  </button>
-                  {counts.risky > 0 && (
-                    <button
-                      type="button"
-                      onClick={sendRiskyViaStandard}
-                      className="rounded-lg bg-brand px-2 py-1 text-[11px] font-semibold text-white hover:bg-brand"
-                    >
-                      Send Standard
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+}
+}
           </div>
         </Card>
 
@@ -3698,9 +3557,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
           <Card className="animate-fade-in" tourId="progress">
             <h2 className="text-[15px] font-semibold text-ink">Generated Emails</h2>
             <p className="mt-0.5 text-[11.5px] leading-snug text-ink-soft">
-              {mode === "standard"
-                ? "Tap an email to open it in your mail app. Sent rows leave the queue instantly — a sent address is locked."
-                : "Delivered from your connected Gmail profiles. A row is marked Sent only once Gmail confirms it."}
+              Progress is read from the campaign database; rows are marked sent only after Gmail confirms delivery.
             </p>
 
             <div className="mt-2.5 flex items-center gap-1 rounded-full border border-line bg-soft p-0.5">
@@ -3730,8 +3587,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                     on={scout}
                     onClick={() => {
                       if (scout) {
-                        setScout(false);
-                        setEngine("idle");
+                        void pauseCampaign();
                         return;
                       }
                       startCampaign();
@@ -3831,7 +3687,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               {shownGenerated.slice(0, 400).map((g) => (
                 <button
                   key={g.id}
-                  onClick={() => mode === "standard" && openMail(g)}
+                  onClick={() => undefined}
                   disabled={g.sent}
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
                     g.sent ? "bg-brand-soft/60" : ""
@@ -3889,195 +3745,6 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
           onCancel={() => setConfirming(null)}
           onConfirm={() => void disconnectProfile(confirming.id, confirming.email)}
         />
-      )}
-      {(confirming?.kind === "duplicate" || confirming?.kind === "risky") && (
-        <Confirm
-          title={`Remove all ${confirming.count} ${confirming.kind} recipients?`}
-          confirmLabel="Remove"
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => removeCategory(confirming.kind)}
-        />
-      )}
-      {confirming?.kind === "cleanup" && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 px-6">
-          <div className="w-full max-w-[340px] animate-scale-in rounded-2xl border border-line bg-white p-5 shadow-[0_18px_44px_-26px_oklch(0.31_0.128_268/40%)]">
-            <p className="text-[14px] font-semibold text-ink">List Hygiene & Reputation</p>
-            <p className="mt-1.5 text-[12px] leading-snug text-ink-soft">
-              Found {confirming.duplicate > 0 ? `${confirming.duplicate} duplicate(s)` : ""}{confirming.duplicate > 0 && confirming.risky > 0 ? " and " : ""}{confirming.risky > 0 ? `${confirming.risky} unverified/risky domain(s)` : ""}.
-            </p>
-            <p className="mt-2 text-[11px] leading-snug text-brand bg-brand-soft p-2.5 rounded-xl border border-brand/30">
-              Sending risky emails through Elite Engine can hurt your connected Gmail sender score. Excluded leads are automatically saved to your Quarantine Vault!
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              {confirming.risky > 0 && (
-                <button
-                  type="button"
-                  onClick={sendRiskyViaStandard}
-                  className="w-full rounded-full bg-brand py-2 text-[12px] font-semibold text-white shadow-xs hover:opacity-90"
-                >
-                  Send Risky in Standard Mode ({confirming.risky})
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  removeStatuses(["duplicate", "risky"]);
-                  setCleanupHandled(true);
-                  setConfirming(null);
-                  log("Saved unverified leads to Quarantine Vault — sending safe contacts on Elite");
-                  setEngine("sending"); try { if (uid) localStorage.setItem(campaignResumeKey(uid), "1"); localStorage.removeItem("ec-engine-resume"); } catch {} /* EC_RESUME_SENDING_ON_RETURN */;
-                  setScout(true);
-                }}
-                className="w-full rounded-full border border-line bg-soft py-2 text-[12px] font-semibold text-ink hover:bg-neutral-100"
-              >
-                Send Safe on Elite (Save to Vault)
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirming(null)}
-                className="w-full py-1 text-[11.5px] font-medium text-ink-soft hover:text-ink"
-              >
-                Review List First
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-            {vaultOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 p-4 backdrop-blur-xs">
-          <div className="relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-[0_24px_50px_-20px_oklch(0.31_0.128_268/45%)] animate-scale-in">
-            <div className="flex items-center justify-between border-b border-line px-5 py-4">
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-brand-soft text-brand">
-                  <Database className="size-5" />
-                </span>
-                <div>
-                  <h3 className="text-[15px] font-bold text-ink">Quarantine Leads Vault</h3>
-                  <p className="text-[11.5px] text-ink-soft">
-                    {quarantineVault.length} unverified & excluded leads preserved safely
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setVaultOpen(false)}
-                className="flex size-8 items-center justify-center rounded-full text-ink-soft hover:bg-neutral-100 hover:text-ink"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3 overflow-y-auto p-5">
-              <div className="rounded-2xl border border-brand/30 bg-brand-soft p-3 text-[12px] leading-relaxed text-ink">
-                <strong>Why are these here?</strong> The Elite Gmail Engine excludes these addresses to protect your Google account reputation from hard bounces. They are preserved here so your leads are never thrown away.
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={quarantineVault.length === 0}
-                  onClick={() => {
-                    const emails = quarantineVault.map((r) => r.email).join("\n");
-                    navigator.clipboard.writeText(emails);
-                    toast.success("Copied all emails to clipboard!");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-soft px-3.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-neutral-100 disabled:opacity-40"
-                >
-                  <Copy className="size-3.5" /> Copy Emails
-                </button>
-                <button
-                  type="button"
-                  disabled={quarantineVault.length === 0}
-                  onClick={() => {
-                    const rows = [
-                      ["email", "name", "company", "status", "reason"],
-                      ...quarantineVault.map((r) => [r.email, r.name, r.company, r.status, r.reason]),
-                    ];
-                    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `quarantine_leads_${Date.now()}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast.success("Downloaded Quarantine CSV!");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-soft px-3.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-neutral-100 disabled:opacity-40"
-                >
-                  <Download className="size-3.5" /> Export CSV
-                </button>
-                <button
-                  type="button"
-                  disabled={quarantineVault.length === 0}
-                  onClick={() => {
-                    switchMode("standard");
-                    setRecipients(quarantineVault);
-                    const nextGen = buildGenerated(quarantineVault);
-                    setGenerated(nextGen);
-                    generatedRef.current = nextGen;
-                    setFrom(1);
-                    setTo(quarantineVault.length);
-                    setTab("valid");
-                    setCleanupHandled(true);
-                    setVaultOpen(false);
-                    log(`Loaded ${quarantineVault.length} quarantined leads into Standard Mode (Mailto)`);
-                    toast.success("Loaded into Standard Mode", {
-                      description: "Send safely via your device's native mail app without touching the Elite API.",
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
-                >
-                  <Send className="size-3.5" /> Load into Standard Mode
-                </button>
-              </div>
-
-              <div className="mt-2 rounded-2xl border border-line bg-soft/50 p-2 max-h-60 overflow-y-auto divide-y divide-line/60">
-                {quarantineVault.length === 0 ? (
-                  <p className="py-6 text-center text-[12.5px] text-ink-soft">
-                    No leads in quarantine. Valid lists pass directly to Elite Engine.
-                  </p>
-                ) : (
-                  quarantineVault.map((item, idx) => (
-                    <div key={`${item.email}-${idx}`} className="flex items-center justify-between py-2 px-2 text-[12px]">
-                      <div className="min-w-0 pr-2">
-                        <p className="font-semibold text-ink truncate">{item.email}</p>
-                        <p className="text-[11px] text-ink-soft truncate">{item.reason || "Excluded by list hygiene"}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium bg-neutral-200 text-neutral-800">
-                        {item.status}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-line bg-neutral-50 px-5 py-3 text-[12px]">
-              {quarantineVault.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm("Clear all leads from the Quarantine Vault?")) {
-                      setQuarantineVault([]);
-                      toast.info("Quarantine Vault cleared");
-                    }
-                  }}
-                  className="text-rose-600 hover:underline"
-                >
-                  Clear Vault
-                </button>
-              ) : <div />}
-              <button
-                type="button"
-                onClick={() => setVaultOpen(false)}
-                className="rounded-full bg-ink px-4 py-1.5 text-[12px] font-semibold text-white"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
       )}
       {confirming?.kind === "setting" && (
         <Confirm
@@ -4874,7 +4541,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
                 sentCount,
                 remaining: Math.max(0, generated.length - sentCount),
                 selectedRange: { from, to },
-                quarantinedCount: quarantineVault.length,
                 serverCampaigns: persistedCampaignWorkspace.campaigns.map((campaign) => ({
                   id: campaign.id, name: campaign.name, status: campaign.status,
                   totalRecipients: campaign.total_recipients, sentCount: campaign.actualSent,
@@ -4935,7 +4601,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
             delaySeconds: delay,
             recipients: generated.length,
             sent: sentCount,
-            quarantined: quarantineVault.length,
             remaining: Math.max(0, generated.length - sentCount),
             gmailProfiles: profiles.map((pr: any) => `${pr?.email ?? "gmail"} · ${pr?.status ?? "?"} · sent ${pr?.sent ?? pr?.sentToday ?? 0}/${pr?.limit ?? pr?.dailyLimit ?? "?"}`),
             recentActivity: notes.slice(0, 12),
@@ -4971,19 +4636,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
           sentCount={sentCount}
           totalCount={generated.length}
           pacingSeconds={delay}
-          quarantineVault={quarantineVault}
-          onClearVault={() => {
-            if (window.confirm("Clear all leads from the Quarantine Vault?")) {
-              setQuarantineVault([]);
-              toast.info("Quarantine Vault cleared");
-            }
-          }}
-          onLoadVaultToStandard={() => {
-            if (quarantineVault.length === 0) return;
-            setRecipients(quarantineVault);
-            setMode("standard");
-            toast.success(`Loaded ${quarantineVault.length} leads into Standard Mode`);
-          }}
           onApplyTemplate={(tpl) => {
             setTplA(tpl);
             toast.success("Applied to Template A");
