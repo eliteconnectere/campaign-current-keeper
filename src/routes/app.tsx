@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getWorkspaceDisplaySession } from "@/features/workspace/offline-session";
 import { connectGmailAccount } from "@/lib/gmailConnect";
-import { controlRexManagedCampaign, enqueueCampaign, getRexCampaignWorkspaceData } from "@/lib/campaign.functions";
+import { controlRexManagedCampaign, enqueueCampaign, getCampaignExecutionProgress, getRexCampaignWorkspaceData, listRexCampaigns } from "@/lib/campaign.functions";
 import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/workspace-sync.functions";
 import {
   disconnectGmailProfile,
@@ -661,18 +661,20 @@ function Workspace() {
   useEffect(() => {
     if (!uid || activeServerCampaignId) return;
     let live = true;
-    void (supabase as any).from("campaigns")
-      .select("id,status,sent_count,total_recipients,failed_count")
-      .eq("user_id", uid).in("status", ["queued", "running", "paused"])
-      .order("created_at", { ascending: false }).limit(1).maybeSingle()
-      .then(({ data, error }: any) => {
-        if (!live || error || !data) return;
-        setActiveServerCampaignId(data.id);
-        setServerCampaignStatus(data.status);
-        setServerCampaignCounts({ sent: Number(data.sent_count ?? 0), total: Number(data.total_recipients ?? 0), failed: Number(data.failed_count ?? 0) });
-        setEngine(data.status === "paused" ? "paused" : "sending");
-        setScout(data.status !== "paused");
+    void listRexCampaigns().then(({ campaigns }) => {
+      if (!live) return;
+      const active = campaigns.find((campaign: any) => ["queued", "running", "paused"].includes(campaign.status));
+      if (!active) return;
+      setActiveServerCampaignId(active.id);
+      setServerCampaignStatus(active.status);
+      setServerCampaignCounts({
+        sent: Number(active.sent_count ?? 0),
+        total: Number(active.total_recipients ?? 0),
+        failed: Number(active.failed_count ?? 0),
       });
+      setEngine(active.status === "paused" ? "paused" : "sending");
+      setScout(active.status !== "paused");
+    }).catch((error) => console.warn("Could not restore the active server campaign.", error));
     return () => { live = false; };
   }, [uid, activeServerCampaignId]);
 
@@ -680,23 +682,26 @@ function Workspace() {
     if (!uid || !activeServerCampaignId) return;
     let live = true;
     const refreshServerCampaign = async () => {
-      const { data: campaign, error } = await (supabase as any).from("campaigns")
-        .select("id,status,sent_count,total_recipients,failed_count")
-        .eq("id", activeServerCampaignId).eq("user_id", uid).maybeSingle();
-      if (!live || error || !campaign) return;
-      const sent = Number(campaign.sent_count ?? 0);
-      const total = Number(campaign.total_recipients ?? 0);
-      const failed = Number(campaign.failed_count ?? 0);
-      setServerCampaignStatus(campaign.status);
-      setServerCampaignCounts({ sent, total, failed });
-      const { data: rows } = await (supabase as any).from("campaign_recipients")
-        .select("email,status").eq("campaign_id", activeServerCampaignId);
-      if (!live) return;
-      const sentEmails = new Set((rows ?? []).filter((row: any) => row.status === "sent").map((row: any) => String(row.email).trim().toLowerCase()));
-      setGenerated((previous) => previous.map((row) => ({ ...row, sent: sentEmails.has(row.email.trim().toLowerCase()) || row.sent })));
-      if (campaign.status === "paused") { setEngine("paused"); setScout(false); }
-      else if (["queued", "running"].includes(campaign.status)) { setEngine("sending"); setScout(true); }
-      else { setEngine("idle"); setScout(false); setNextInSec(null); }
+      try {
+        const result = await getCampaignExecutionProgress({ data: { campaignId: activeServerCampaignId } });
+        if (!live) return;
+        const campaign = result.campaign;
+        const sent = Number(campaign.sent_count ?? 0);
+        const total = Number(campaign.total_recipients ?? 0);
+        const failed = Number(campaign.failed_count ?? 0);
+        setServerCampaignStatus(campaign.status);
+        setServerCampaignCounts({ sent, total, failed });
+        const sentEmails = new Set(result.sentEmails);
+        setGenerated((previous) => previous.map((row) => ({
+          ...row,
+          sent: sentEmails.has(row.email.trim().toLowerCase()),
+        })));
+        if (campaign.status === "paused") { setEngine("paused"); setScout(false); }
+        else if (["queued", "running"].includes(campaign.status)) { setEngine("sending"); setScout(true); }
+        else { setEngine("idle"); setScout(false); setNextInSec(null); }
+      } catch (error) {
+        console.warn("Campaign progress refresh failed; the server queue continues independently.", error);
+      }
     };
     void refreshServerCampaign();
     const timer = window.setInterval(() => void refreshServerCampaign(), 3000);
@@ -3523,11 +3528,8 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                   </button>
                   <button
                     onClick={() => {
-                      if (engine === "sending") {
-                        setEngine("idle");
-                        setScout(false);
-                        finishCampaignRun("stopped");
-                        log("Campaign paused — remaining unsent rows stay ready. Tap Execute to continue, or Reset again to clear the workspace run.", "campaignPaused");
+                      if (engine === "sending" || engine === "paused") {
+                        void stopCampaign();
                         return;
                       }
                       if (!window.confirm("Reset this campaign run? Clears the list, progress, and client send locks (same as Reset workspace). Server still blocks the exact same message to the same address.")) return;
@@ -4092,7 +4094,7 @@ setDelay(5);
   delayRef.current = 5;
                   oneSecOkRef.current = true;
                   setOneSecAsk(false);
-                  startCampaign(true);
+                  startCampaign();
                 }}
                 className="mt-3 w-full rounded-xl border border-brand px-3 py-2 text-[13px] font-semibold text-brand"
               >Use 3 seconds and start</button>
