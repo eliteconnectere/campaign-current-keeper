@@ -1493,15 +1493,10 @@ function Workspace() {
     const sourceText = raw.trim() || rexImportRawRef.current.trim();
     const parsed = sourceText ? parseRecipientFileText(sourceText) : recipients;
     const scanned = await enrichWithDomainScan(parsed);
-    const duplicates = scanned.filter((recipient) => recipient.status === "duplicate");
-    const list = scanned.filter((recipient) => recipient.status !== "duplicate");
-    if (duplicates.length) {
-      archiveToVault(duplicates);
-      toast.info(`${duplicates.length} duplicate row(s) were moved to Quarantine Vault and excluded from sending.`);
-    }
+    const list = scanned;
     if (list.length === 0) {
-      toast.error(duplicates.length ? "No unique recipients remain. Duplicate addresses are safely stored in Quarantine Vault." : "No usable recipient addresses were found. Check the list and try again.");
-      return { ok: false, valid: 0, risky: 0, duplicate: duplicates.length };
+      toast.error("No valid email addresses were found. Check the list and try again.");
+      return { ok: false, valid: 0, risky: 0, duplicate: 0 };
     }
   const alreadySent = new Set([
     ...generated.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase()),
@@ -1511,7 +1506,7 @@ function Workspace() {
     setValidated(list.length > 0);
     setEditing(false);
     setTab("valid");
-    // Only unique recipients stay in the execution dataset; duplicates are quarantined above.
+    // The parser already returns only syntactically valid, unique email addresses.
     const nextGenerated = buildGenerated(list).map((g) => ({ ...g, sent: alreadySent.has(g.email) }));
     setGenerated(nextGenerated);
     setGenTab("all");
@@ -1528,8 +1523,8 @@ function Workspace() {
   }
     setCleanupHandled(false);
     rememberSmartFillSet(list);
-    toast.success(`Validation completed: ${list.filter(r => r.status === "valid").length} valid, ${list.filter(r => r.status === "risky").length} risky, ${duplicates.length} duplicate(s) quarantined and excluded.`);
-    return { ok: true, valid: list.filter(r => r.status === "valid").length, risky: list.filter(r => r.status === "risky").length, duplicate: duplicates.length };
+    toast.success(`Validation completed: ${list.length} unique addresses ready for the server queue.`);
+    return { ok: true, valid: list.length, risky: list.filter(r => r.status === "risky").length, duplicate: 0 };
   }
 
   /** Smart Fill History keeps only the latest 3 genuine sets the user supplied. */
@@ -1839,271 +1834,6 @@ function removeCategory(kind: "duplicate" | "risky") {
   const usableProfiles = profiles.filter((p) => !p.exhausted);
   const canSendElite = usableProfiles.length > 0;
 
-  /* Auto-Scout — Standard mode only. Opens real mail-app links on true wall-clock delay. */
-  useEffect(() => {
-    if (!scout || mode !== "standard" || engine !== "sending") return;
-    let cancelled = false;
-    let timer = 0;
-
-    const step = () => {
-      if (cancelled) return;
-      const next = generatedRef.current.find((g) => !g.sent && g.id >= from && g.id <= to);
-      if (!next) {
-        setScout(false);
-        setEngine("idle");
-        finishCampaignRun("completed");
-        // After Elite finishes the safe list, offer Standard Mode only if Vault still has leads
-        try {
-          const vaultLen = (typeof quarantineVault !== "undefined" && Array.isArray(quarantineVault))
-            ? quarantineVault.length
-            : 0;
-          if (vaultLen > 0 && (mode as string) === "elite") {
-            toast.message(`Elite finished. ${vaultLen} lead(s) remain in Quarantine Vault.`, {
-              action: {
-                label: "Send via Standard",
-                onClick: () => {
-                  if (typeof sendRiskyViaStandard === "function") sendRiskyViaStandard();
-                },
-              },
-              duration: 12000,
-            });
-          }
-        } catch {}
-        return;
-      }
-      const url = `googlegmail://co?to=${encodeURIComponent(next.email)}&subject=${encodeURIComponent(
-        next.subject,
-      )}&body=${encodeURIComponent(next.body)}`;
-      window.location.href = url;
-      recordCampaignRecipient(next.email, "handed_off", "Gmail compose was opened; delivery is not confirmed.", next.name);
-      setGenerated((prev) => prev.map((x) => (x.id === next.id ? { ...x, sent: true } : x)));
-      void countStandardSend().then((ok) => {
-        if (!ok) {
-          cancelled = true;
-          setScout(false);
-          setEngine("idle");
-          finishCampaignRun("failed");
-        }
-      });
-      last = performance.now();
-      wait();
-    };
-    // Timing comes from real elapsed time and always uses the latest delay.
-    let last = performance.now();
-    const wait = () => {
-      if (cancelled) return;
-      const due = last + delayRef.current * 1000 - performance.now();
-      if (due <= 0) step();
-      else timer = window.setTimeout(wait, Math.min(due, 200));
-    };
-    wait();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [scout, from, to, mode, engine]);
-
-  /* Elite Engine — real Gmail sending. Nothing counts unless Gmail confirms it. */
-  useEffect(() => {
-    if (mode !== "elite") return;
-    if (engine !== "sending" || !scout) return;
-
-    let cancelled = false;
-    let timer = 0;
-
-    const stop = (msg?: string) => {
-      setEngine("idle");
-      setScout(false);
-      if (msg) {
-        const finished = /finished|complete/i.test(msg);
-        finishCampaignRun(finished ? "completed" : /paused/i.test(msg) ? "paused" : "failed");
-        log(msg, finished ? "campaignCompleted" : "campaignPaused");
-      }
-    };
-
-    let startedAt = performance.now();
-    const step = async () => {
-      if (cancelled) return;
-      // Single-flight: only one send may ever be in progress, across effect re-runs.
-      if (sendLockRef.current) {
-        timer = window.setTimeout(() => void step(), 150);
-        return;
-      }
-      const done = new Set(
-        generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase()),
-      );
-      for (const e of sentRecipientEmailsRef.current) done.add(e);
-      for (const e of claimedRef.current) done.add(e);
-      const riskySet = new Set(
-        recipients.filter((r) => r.status === "risky").map((r) => r.email.trim().toLowerCase())
-      );
-      const next = generatedRef.current.find(
-        (g) => !g.sent && g.id >= from && g.id <= to && !done.has(g.email.trim().toLowerCase()) && !riskySet.has(g.email.trim().toLowerCase()),
-      );
-      if (!next) {
-        stop("Campaign finished — no pending recipients left in range");
-        return;
-      }
-      const key = next.email.trim().toLowerCase();
-      sendLockRef.current = true;
-      claimedRef.current.add(key);
-
-// Elite sends through Gmail, so the 3-second minimum gives Gmail response time
-  // room without pretending that a 1-second setting is a true wall-clock pace.
-      // Wall-clock pace: delay is measured from THIS send's start so Gmail RTT
-      // counts toward the selected seconds (3s feels ~3s, not 3s + API).
-      const sendStart = performance.now();
-      // Anchor the live finish estimate to this recipient's actual send start.
-      setNextInSec(delayRef.current);
-      let result: Awaited<ReturnType<typeof sendGmailMessage>>;
-      try {
-        result = await sendGmailMessage({
-          data: {
-            to: next.email,
-            subject: next.subject,
-            body: next.body,
-  profileId: activeRef.current,
-  permanentSendProtection,
-  },
-        });
-      } catch (error) {
-        console.error(error);
-        // Unknown outcome: keep the address locked so it is never sent twice.
-        sendLockRef.current = false;
-        if (!cancelled) {
-          setOffline(true);
-          setEngine("paused"); try { localStorage.removeItem("ec-engine-resume"); } catch {};
-          setScout(false);
-          const message = "Campaign paused — the connection dropped. Your queue is safe; resume when ready.";
-          log(message);
-          toast.error(message);
-        }
-        return;
-      }
-      sendLockRef.current = false;
-
-      if (result.ok) {
-        // Play the selected sending swoosh only after Gmail confirms delivery.
-        // The campaign-start tap unlocks Web Audio before asynchronous sending begins.
-        if (settings.sounds && settings.sendingSound) {
-          playSendSound(settings.sendingSoundVariant, true);
-        }
-        // Record the confirmed send even if the effect was re-run meanwhile,
-        // so the same recipient can never be picked again.
-        const mark = (list: Generated[]) =>
-          list.map((x) => (x.email.trim().toLowerCase() === key ? { ...x, sent: true } : x));
-        generatedRef.current = mark(generatedRef.current);
-        setGenerated(mark);
-        sentRecipientEmailsRef.current.add(key);
-        setSentRecipientEmails((previous) =>
-          previous.includes(key) ? previous : [...previous, key],
-        );
-        const today = new Date().toISOString().slice(0, 10);
-        setCampaignHistory((previous) => {
-          const existing = previous.find((day) => day.date === today);
-          if (existing) return previous.map((day) => day.date === today ? { ...day, sent: day.sent + 1 } : day);
-          return [{ date: today, sent: 1 }, ...previous].slice(0, 5);
-        });
-        setEntitlements((e) => (e ? { ...e, sent24h: e.sent24h + 1, used: e.used + 1 } : e));
-      } else {
-        claimedRef.current.delete(key);
-      }
-      if (cancelled) return;
-
-      applyProfiles(result.profiles);
-
-      if (result.ok) {
-        recordCampaignRecipient(next.email, "sent", undefined, next.name);
-        if (result.rotated) {
-          setActiveProfileId(result.profileId);
-          activeRef.current = result.profileId;
-          log(`Rotated to ${result.email} — the previous profile reached its limit. Sent total continues.`);
-        }
-        // Keep cycle clock from sendStart so remaining wait = delay - API time
-        startedAt = sendStart;
-        waitThen();
-        return;
-      }
-
-      if (result.reason === "already_sent") {
-        recordCampaignRecipient(next.email, "skipped", "The server confirmed this exact message was already delivered.", next.name);
-        const mark = (list: Generated[]) =>
-          list.map((x) => (x.email.trim().toLowerCase() === key ? { ...x, sent: true } : x));
-        generatedRef.current = mark(generatedRef.current);
-        setGenerated(mark);
-        log(`Skipped ${next.email} — same message already delivered to this address. It cannot send again unless you change the subject or body.`);
-        startedAt = performance.now();
-        waitThen();
-        return;
-      }
-
-
-      recordCampaignRecipient(next.email, "failed", result.message ?? result.reason ?? "Gmail could not complete this recipient.", next.name);
-      if (result.reason === "trial_expired") {
-        stop("Elite Engine free trial has ended — campaign stopped");
-        askUpgrade("Your 10-day Elite Engine free trial has ended. Subscribe to keep using Elite Engine.");
-        void refreshEntitlements();
-        return;
-      }
-      if (result.reason === "allowance_exhausted") {
-        const message = "Sending allowance used up for this plan — campaign stopped. Check your plan or upgrade to continue.";
-        stop(message);
-        toast.error(message);
-        setPremiumReason("Your plan's sending allowance is used up. Upgrade to keep sending.");
-        void refreshEntitlements();
-        return;
-      }
-      if (result.reason === "all_exhausted") {
-        const message = "Campaign paused — every connected Gmail profile has reached its daily limit. Connect another profile or resume after the limit resets.";
-        stop(message);
-        toast.error(message);
-        return;
-      }
-      if (result.reason === "reconnect") {
-        if (result.profileId) setNeedsReconnect((m) => ({ ...m, [result.profileId as string]: true }));
-        const message = "Campaign stopped — Gmail access expired for a connected profile. Reconnect it to continue.";
-        setConnectNote("Google access for that profile expired. Reconnect it to continue.");
-        stop(message);
-        toast.error(message);
-        return;
-      }
-      if (result.reason === "no_profiles") {
-        const message = "Campaign stopped — no connected Gmail profile is available. Connect Gmail before starting again.";
-        stop(message);
-        toast.error(message);
-        return;
-      }
-      const message = `Campaign stopped — ${result.message ?? "Gmail rejected the send"}`;
-      stop(message);
-      toast.error(message);
-    };
-
-    // Real wall-clock delay: sends start exactly `delay` seconds apart, measured
-    // from the start of the previous send, so Gmail's own response time is not
-    // added on top. Always uses the current selection.
-    const waitThen = () => {
-      if (cancelled) return;
-      const tick = () => {
-        if (cancelled) return;
-        const due = startedAt + delayRef.current * 1000 - performance.now();
-        if (due <= 0) {
-          setNextInSec(0);
-          void step();
-        } else {
-          setNextInSec(Math.max(0, Math.ceil(due / 1000)));
-          timer = window.setTimeout(tick, Math.min(due, 100));
-        }
-      };
-      tick();
-    };
-    void step();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, scout, mode, from, to]);
-
   function importRecipientsIntoWorkspace(rawFile: string, sourceName = "Imported list"): boolean {
     if (engine === "sending" || engine === "paused") {
       try { (window as any).__ecLastImportError = "A campaign is still sending or paused. Pause/stop it before replacing the recipient list."; } catch {}
@@ -2224,102 +1954,6 @@ function removeCategory(kind: "duplicate" | "risky") {
     }
     if (!keepActive) activeCampaignIdRef.current = null;
   }
-
-  // Backgrounding the app is an automatic pause, not a cancellation. Keep a
-  // per-account resume marker and restart from the last confirmed recipient
-  // when the user returns. An explicit Pause or Logout clears that marker.
-  useEffect(() => {
-    if (!ready || !signedIn || !uid) return;
-    const key = campaignResumeKey(uid);
-    const erasureDecisionIsDue = () =>
-      Boolean(eraseRequest && new Date(eraseRequest.expires_at).getTime() <= Date.now());
-    const pauseForBackground = () => {
-      if (engineRef.current !== "sending") return;
-      try { localStorage.setItem(key, "1"); } catch {}
-      setEngine("paused");
-      setScout(false);
-      finishCampaignRun("paused", true);
-      log("Campaign automatically paused while Elite Connectere is in the background. It will resume when you return.", "campaignPaused");
-    };
-    const resumeOnReturn = () => {
-      if (erasureDecisionIsDue()) {
-        try { localStorage.removeItem(key); localStorage.removeItem("ec-engine-resume"); } catch {}
-        setAutoResumePending(false);
-        return;
-      }
-      if (document.visibilityState === "hidden" || !navigator.onLine) return;
-      try {
-        if (localStorage.getItem(key) !== "1") return;
-      } catch { return; }
-      if (engineRef.current !== "paused") return;
-      if (mode === "elite" && (!canSendElite || offline)) return;
-      setCampaignRuns((previous) => previous.map((run) => {
-        if (run.id !== activeCampaignIdRef.current || run.status !== "paused") return run;
-        const resumed = { ...run, status: "running" as const };
-        delete resumed.finishedAt;
-        return resumed;
-      }));
-      setEngine("sending");
-      setScout(true);
-      log("Campaign automatically resumed from the last confirmed recipient.", "campaignStarted");
-    };
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") pauseForBackground();
-      else resumeOnReturn();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", pauseForBackground);
-    window.addEventListener("pageshow", resumeOnReturn);
-    window.addEventListener("focus", resumeOnReturn);
-    window.addEventListener("online", resumeOnReturn);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", pauseForBackground);
-      window.removeEventListener("pageshow", resumeOnReturn);
-      window.removeEventListener("focus", resumeOnReturn);
-      window.removeEventListener("online", resumeOnReturn);
-    };
-  }, [ready, signedIn, uid, mode, canSendElite, offline, eraseRequest?.expires_at]);
-
-  // A full page reload destroys the running React state. Rehydrate the saved
-  // execution ledger first, then resume only when the authenticated workspace
-  // is ready and the device is back online/visible.
-  useEffect(() => {
-    if (!autoResumePending || !eraseStatusChecked || !ready || !signedIn || !uid) return;
-    const key = campaignResumeKey(uid);
-    if (eraseRequest && new Date(eraseRequest.expires_at).getTime() <= Date.now()) {
-      setAutoResumePending(false);
-      try {
-        localStorage.removeItem(key);
-        localStorage.removeItem("ec-engine-resume");
-      } catch {}
-      return;
-    }
-    const attemptResume = () => {
-      if (document.visibilityState === "hidden" || !navigator.onLine) return;
-      if (mode === "elite" && (!canSendElite || offline)) return;
-      try { if (localStorage.getItem(key) !== "1") return; } catch { return; }
-      setAutoResumePending(false);
-      setCampaignRuns((previous) => previous.map((run) => {
-        if (run.id !== activeCampaignIdRef.current || run.status !== "paused") return run;
-        const resumed = { ...run, status: "running" as const };
-        delete resumed.finishedAt;
-        return resumed;
-      }));
-      setEngine("sending");
-      setScout(true);
-      log("Campaign restored and automatically resumed from its last confirmed recipient.", "campaignStarted");
-    };
-    attemptResume();
-    document.addEventListener("visibilitychange", attemptResume);
-    window.addEventListener("pageshow", attemptResume);
-    window.addEventListener("online", attemptResume);
-    return () => {
-      document.removeEventListener("visibilitychange", attemptResume);
-      window.removeEventListener("pageshow", attemptResume);
-      window.removeEventListener("online", attemptResume);
-    };
-  }, [autoResumePending, eraseStatusChecked, eraseRequest?.expires_at, ready, signedIn, uid, mode, canSendElite, offline]);
 
   async function startCampaign(skipPace = false): Promise<boolean> {
     // Prime Web Audio synchronously in the Execute/Approve tap, before any async work.
