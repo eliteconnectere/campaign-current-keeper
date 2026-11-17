@@ -6,7 +6,12 @@ const CONNECTOR_ID = "google_mail";
 // of simultaneous campaigns, and leases guarantee one worker per campaign.
 const CAMPAIGNS_PER_WORKER = 10;
 const MAX_PER_CAMPAIGN_RUN = 1000;
-const WORKER_BUDGET_MS = 50_000;
+// Time budget per worker run. Set WORKER_BUDGET_MS in hosting env:
+// Vercel Hobby ~8000, Vercel Pro ~50000, Railway/VPS up to 280000.
+const WORKER_BUDGET_MS = (() => {
+  const raw = Number(typeof process !== "undefined" ? process.env?.WORKER_BUDGET_MS : NaN);
+  return Number.isFinite(raw) && raw >= 5_000 ? Math.min(raw, 280_000) : 8_000;
+})();
 const MAX_ATTEMPTS = 3;
 
 let githubJwksCache: { expiresAt: number; keys: JsonWebKey[] } | null = null;
