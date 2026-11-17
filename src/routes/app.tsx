@@ -3854,7 +3854,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                   <li>• Rex conversations, messages, memories, memory settings, events, action records, custom features, destinations and personal settings.</li>
                   <li>• Your Private Chat history is removed from your account: your sent messages are deleted, received messages are hidden for your account, and your chat profile and connection requests are removed. Other participants’ copies and shared connections are preserved.</li>
                   <li>• Connected Gmail profile credentials, app connection records and connection-attempt history.</li>
-                  <li>• Planner notes, saved Smart Fill lists, Quarantine Vault recipient records, workspace notes, activity data, local preferences and onboarding progress.</li>
+                  <li>• Planner notes, saved Smart Fill lists, workspace notes, activity data, local preferences and onboarding progress.</li>
                 </ul>
               </div>
               <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3.5 text-[11.5px] leading-relaxed text-emerald-950">
@@ -4100,7 +4100,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           setAssistOpen(true);
         }}
       />
-      <EliteTips mode={mode} active={accepted && signedIn && !chatOpen && !radarOpen && !oneSecAsk} />
+      <EliteTips mode={mode} active={accepted && signedIn && !chatOpen && !radarOpen} />
       
             {assistantCelebrate && (
         <div
@@ -4363,7 +4363,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           resumeConversationId={rexResumeConversationId}
           onPrepareCampaign={prepareCurrentCampaignForRex}
           onExecuteCurrentCampaign={async () => {
-            const started = await startCampaign(true);
+            const started = await startCampaign();
             if (started) setFeatureStudio("tracker");
             return started;
           }}
