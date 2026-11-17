@@ -9,7 +9,7 @@ const MAX_PER_CAMPAIGN_RUN = 1000;
 // Time budget per worker run. Set WORKER_BUDGET_MS in hosting env:
 // Vercel Hobby ~8000, Vercel Pro ~50000, Railway/VPS up to 280000.
 const WORKER_BUDGET_MS = (() => {
-  const raw = Number(typeof process !== "undefined" ? process.env?.WORKER_BUDGET_MS : NaN);
+  const raw = Number(typeof process !== "undefined" ? process.env?.["WORKER_BUDGET_MS"] : NaN);
   return Number.isFinite(raw) && raw >= 5_000 ? Math.min(raw, 280_000) : 8_000;
 })();
 const MAX_ATTEMPTS = 3;
