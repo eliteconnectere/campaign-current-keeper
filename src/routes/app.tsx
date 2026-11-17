@@ -3181,29 +3181,20 @@ function Workspace() {
 
           <div className="mt-2.5 animate-fade-in">
             <div className="flex items-center gap-1 rounded-full border border-line bg-soft p-0.5">
-              {(
-                [
-                  ["valid", counts.valid, ShieldCheck],
-                                    ["risky", counts.risky, AlertTriangle],
-                ] as [Status, number, typeof ShieldCheck][]
-              ).map(([key, n, Icon]) => {
+              {(["valid", "risky"] as const).map((key) => {
+                const count = key === "valid" ? counts.valid : counts.risky;
+                const Icon = key === "valid" ? ShieldCheck : AlertTriangle;
                 return (
                   <button
                     key={key}
-                    onClick={() => {
-                      setTab(key);
-                    }}
+                    onClick={() => setTab(key)}
                     className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${
                       tab === key ? "bg-brand text-white" : "text-ink"
                     }`}
                   >
                     <Icon className="size-3.5 shrink-0" /> {key}
-                    <span
-                      className={`rounded-full px-1 py-px text-[10px] ${
-                        tab === key ? "bg-white/20" : "bg-white"
-                      }`}
-                    >
-                      {n}
+                    <span className={`rounded-full px-1 py-px ${tab === key ? "bg-white/20" : "bg-white"}`}>
+                      {count}
                     </span>
                   </button>
                 );
