@@ -550,6 +550,7 @@ function Workspace() {
   const [campaignRuns, setCampaignRuns] = useState<CampaignExecution[]>([]);
   const [persistedCampaignWorkspace, setPersistedCampaignWorkspace] = useState<{ campaigns: any[]; recipients: any[]; sentLast24Hours: number; source: string; truncated: boolean }>({ campaigns: [], recipients: [], sentLast24Hours: 0, source: 'server_campaigns', truncated: false });
   const activeCampaignIdRef = useRef<string | null>(null);
+  const campaignQueueLockRef = useRef(false);
   const [activeServerCampaignId, setActiveServerCampaignId] = useState<string | null>(null);
   const [serverCampaignStatus, setServerCampaignStatus] = useState<string>("idle");
   const [serverCampaignCounts, setServerCampaignCounts] = useState({ sent: 0, total: 0, failed: 0 });
@@ -1910,6 +1911,8 @@ function Workspace() {
     if (!uid) { toast.error("Sign in before starting a campaign."); return false; }
     if (engine === "sending") { toast.info("This campaign is already running on the server."); return false; }
     if (!navigator.onLine) { toast.error("Reconnect to create or control the server campaign."); return false; }
+    if (campaignQueueLockRef.current) { toast.info("Your campaign request is already being saved."); return false; }
+    campaignQueueLockRef.current = true;
     try {
       if (activeServerCampaignId && engine === "paused") {
         await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "resume" } });
@@ -1949,6 +1952,8 @@ function Workspace() {
       console.error("Could not queue campaign", error);
       toast.error(error instanceof Error ? error.message : "Campaign could not be added to the server queue.");
       return false;
+    } finally {
+      campaignQueueLockRef.current = false;
     }
   }
 
