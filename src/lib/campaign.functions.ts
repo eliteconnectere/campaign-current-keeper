@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 async function requireCampaignEntitlement(userId: string) {
   const [{ ensureBilling, entitlementsFor }, { supabaseAdmin }] = await Promise.all([
@@ -19,7 +19,6 @@ async function requireCampaignEntitlement(userId: string) {
   return entitlements;
 }
 
-const EMAIL_RE = /^[^\\s@]+@[^\\s@]+\\.[a-zA-Z]{2,}$/;
 
 async function kickCampaignWorker(campaignId: string): Promise<{ dispatched: boolean; status?: number }> {
   const secret = process.env["CAMPAIGN_WORKER_SECRET"] || process.env["CRON_SECRET"];
