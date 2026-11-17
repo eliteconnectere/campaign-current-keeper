@@ -105,10 +105,17 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       if (error) throw error;
       const emails = (rows ?? []).map((r: { email: string }) => String(r.email).trim().toLowerCase()).sort();
       if (emails.length === incoming.length && emails.every((email: string, i: number) => email === incoming[i])) {
-        const dispatch = existing.status === "paused"
-          ? { dispatched: false }
-          : await kickCampaignWorker(existing.id);
-        return { campaignId: existing.id, status: existing.status, reused: true, dispatch };
+        let status = existing.status;
+        if (status === "paused") {
+          const { data: resumed, error: resumeError } = await supabaseAdmin.from("campaigns").update({
+            status: "queued", paused_at: null, next_run_at: now, last_error: null, updated_at: now,
+          }).eq("id", existing.id).eq("user_id", context.userId).eq("status", "paused")
+            .select("status").maybeSingle();
+          if (resumeError) throw resumeError;
+          if (resumed) status = resumed.status;
+        }
+        const dispatch = await kickCampaignWorker(existing.id);
+        return { campaignId: existing.id, status, reused: true, dispatch };
       }
     }
 
