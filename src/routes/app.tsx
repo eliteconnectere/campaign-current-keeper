@@ -1967,8 +1967,11 @@ function Workspace() {
       return true;
     } catch (error) { toast.error(error instanceof Error ? error.message : "Campaign could not be stopped."); return false; }
   }
+  // "All" must include both delivered and not-yet-delivered recipients.
+  // Previously it used the same predicate as Pending, hiding every sent row
+  // while the tab counter still showed the full total.
   const shownGenerated = generated.filter((g) =>
-    genTab === "sent" ? g.sent : genTab === "pending" ? !g.sent : !g.sent,
+    genTab === "sent" ? g.sent : genTab === "pending" ? !g.sent : true,
   );
   const tabList = recipients.filter((r) => r.status === tab);
   const current = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
