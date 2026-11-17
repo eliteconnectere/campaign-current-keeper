@@ -2342,12 +2342,6 @@ function Workspace() {
                     <p className="label-caps px-3.5 py-2.5">Workspace menu</p>
                     <div className="divide-y divide-line border-t border-line">
                       <MenuToggle
-                        icon={Zap}
-                        label="Elite Engine mode"
-                        on={mode === "elite"}
-                        onClick={() => switchMode("elite")}
-                      />
-                      <MenuToggle
                         icon={Shuffle}
                         label="2-Way rotation"
                         on={twoWay}
@@ -3017,25 +3011,6 @@ function Workspace() {
             <p className="mt-0.5 text-[12px] leading-snug text-ink-soft">
               Campaigns run through the persistent server queue and connected Google accounts.
             </p>
-          </div>
-
-          <div className="mt-2 inline-flex rounded-full border border-line bg-soft p-0.5">
-            <button
-              onClick={() => switchMode("elite")}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-300 ${
-                "text-ink-soft"
-              }`}
-            >
-              <Send className="size-3.5" /> Standard
-            </button>
-            <button data-tour="engine"
-              onClick={() => switchMode("elite")}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-300 ${
-                mode === "elite" ? "bg-brand text-white" : "text-ink-soft"
-              }`}
-            >
-              <Zap className="size-3.5" /> Elite Engine
-            </button>
           </div>
 
           <div className="mt-2 grid grid-cols-3 gap-1.5">
