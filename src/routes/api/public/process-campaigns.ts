@@ -71,10 +71,14 @@ async function authorizedByGitHubActions(token: string): Promise<boolean> {
 }
 
 async function authorized(request: Request): Promise<boolean> {
-  const expected = process.env["CRON_SECRET"] || process.env["CAMPAIGN_WORKER_SECRET"];
   const authorization = request.headers.get("authorization");
-  const actual = authorization?.replace(/^Bearer\s+/i, "") || request.headers.get("x-campaign-worker-secret");
-  if (expected && actual === expected) return true;
+  const actual = authorization?.replace(/^Bearer\\s+/i, "") || request.headers.get("x-campaign-worker-secret");
+  const workerSecret = process.env["CAMPAIGN_WORKER_SECRET"];
+  const cronSecret = process.env["CRON_SECRET"];
+
+  if (actual && ((workerSecret && actual === workerSecret) || (cronSecret && actual === cronSecret))) {
+    return true;
+  }
   if (!authorization?.startsWith("Bearer ")) return false;
   return authorizedByGitHubActions(authorization.slice(7).trim());
 }
