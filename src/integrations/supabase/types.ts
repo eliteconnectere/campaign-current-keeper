@@ -1397,86 +1397,46 @@ export type Database = {
           isSetofReturn: true
         }
       }
-      claim_due_campaigns:
-        | {
-            Args: {
-              p_campaign_id: string
-              p_lease_seconds: number
-              p_limit: number
-              p_now: string
-            }
-            Returns: {
-              approved_at: string | null
-              body: string
-              completed_at: string | null
-              created_at: string
-              delay_seconds: number
-              failed_count: number
-              id: string
-              last_error: string | null
-              name: string
-              next_run_at: string
-              paused_at: string | null
-              permanent_send_protection: boolean
-              rex_monitored: boolean
-              scheduled_at: string | null
-              sent_count: number
-              started_at: string | null
-              status: string
-              subject: string
-              total_recipients: number
-              updated_at: string
-              user_id: string
-              worker_lease_token: string | null
-              worker_lease_until: string | null
-            }[]
-            SetofOptions: {
-              from: "*"
-              to: "campaigns"
-              isOneToOne: false
-              isSetofReturn: true
-            }
-          }
-        | {
-            Args: {
-              p_campaign_id: string
-              p_lease_seconds: number
-              p_limit: number
-              p_max_concurrent: number
-              p_now: string
-            }
-            Returns: {
-              approved_at: string | null
-              body: string
-              completed_at: string | null
-              created_at: string
-              delay_seconds: number
-              failed_count: number
-              id: string
-              last_error: string | null
-              name: string
-              next_run_at: string
-              paused_at: string | null
-              permanent_send_protection: boolean
-              rex_monitored: boolean
-              scheduled_at: string | null
-              sent_count: number
-              started_at: string | null
-              status: string
-              subject: string
-              total_recipients: number
-              updated_at: string
-              user_id: string
-              worker_lease_token: string | null
-              worker_lease_until: string | null
-            }[]
-            SetofOptions: {
-              from: "*"
-              to: "campaigns"
-              isOneToOne: false
-              isSetofReturn: true
-            }
-          }
+      claim_due_campaigns: {
+        Args: {
+          p_campaign_id?: string
+          p_lease_seconds?: number
+          p_limit?: number
+          p_max_concurrent?: number
+          p_now?: string
+        }
+        Returns: {
+          approved_at: string | null
+          body: string
+          completed_at: string | null
+          created_at: string
+          delay_seconds: number
+          failed_count: number
+          id: string
+          last_error: string | null
+          name: string
+          next_run_at: string
+          paused_at: string | null
+          permanent_send_protection: boolean
+          rex_monitored: boolean
+          scheduled_at: string | null
+          sent_count: number
+          started_at: string | null
+          status: string
+          subject: string
+          total_recipients: number
+          updated_at: string
+          user_id: string
+          worker_lease_token: string | null
+          worker_lease_until: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "campaigns"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       confirm_user_data_erasure: { Args: never; Returns: Json }
       create_company_team_invite: {
         Args: {
