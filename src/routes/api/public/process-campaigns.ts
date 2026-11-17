@@ -70,15 +70,40 @@ async function authorizedByGitHubActions(token: string): Promise<boolean> {
   }
 }
 
+function cleanSecret(val: string | undefined | null): string {
+  if (!val) return "";
+  return val.trim().replace(/^["']|["']$/g, "");
+}
+
 async function authorized(request: Request): Promise<boolean> {
   const authorization = request.headers.get("authorization");
-  const actual = authorization?.replace(/^Bearer\s+/i, "") || request.headers.get("x-campaign-worker-secret");
-  const workerSecret = process.env["CAMPAIGN_WORKER_SECRET"];
-  const cronSecret = process.env["CRON_SECRET"];
+  const bearerToken = authorization?.replace(/^Bearer\s+/i, "");
+  const customHeader = request.headers.get("x-campaign-worker-secret");
+  const actual = cleanSecret(bearerToken || customHeader);
 
-  if (actual && ((workerSecret && actual === workerSecret) || (cronSecret && actual === cronSecret))) {
-    return true;
+  const workerSecret = cleanSecret(process.env["CAMPAIGN_WORKER_SECRET"]);
+  const cronSecret = cleanSecret(process.env["CRON_SECRET"]);
+
+  const isMatch = Boolean(
+    actual && (
+      (workerSecret && actual === workerSecret) ||
+      (cronSecret && actual === cronSecret)
+    )
+  );
+
+  if (!isMatch) {
+    console.warn("[campaign-worker-auth-debug]", {
+      hasAuthHeader: Boolean(authorization),
+      hasCustomHeader: Boolean(customHeader),
+      hasWorkerSecretEnv: Boolean(workerSecret),
+      hasCronSecretEnv: Boolean(cronSecret),
+      actualLength: actual.length,
+      workerSecretLength: workerSecret.length,
+      cronSecretLength: cronSecret.length,
+    });
   }
+
+  if (isMatch) return true;
   if (!authorization?.startsWith("Bearer ")) return false;
   return authorizedByGitHubActions(authorization.slice(7).trim());
 }
