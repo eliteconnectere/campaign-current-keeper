@@ -28,7 +28,7 @@ export async function getWorkspaceDisplaySession(): Promise<Session | null> {
 function readStoredSession(): Session | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem("sb-irzbexiuhiufyjwjzlux-auth-token");
+    const raw = window.localStorage.getItem("sb-rxpvttdhayzrpzcgpxyw-auth-token");
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const candidate = (parsed["currentSession"] && typeof parsed["currentSession"] === "object"
