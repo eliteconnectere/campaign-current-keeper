@@ -181,6 +181,31 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
     return { campaignId: campaign.id, status: queuedCampaign.status, reused: false, dispatch };
   });
 
+export const getCampaignExecutionProgress = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { campaignId: string }) => {
+    const campaignId = String(input?.campaignId ?? "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error("Invalid campaign.");
+    return { campaignId };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin as any;
+    const { data: campaign, error } = await db.from("campaigns")
+      .select("id,status,sent_count,total_recipients,failed_count")
+      .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
+    if (error) throw error;
+    if (!campaign) throw new Error("Campaign not found in your account.");
+    const { data: sentRows, error: sentError } = await db.from("campaign_recipients")
+      .select("email").eq("campaign_id", data.campaignId).eq("status", "sent")
+      .order("created_at", { ascending: true }).limit(5000);
+    if (sentError) throw sentError;
+    return {
+      campaign,
+      sentEmails: (sentRows ?? []).map((row: { email: string }) => String(row.email).trim().toLowerCase()),
+    };
+  });
+
 export const listRexCampaigns = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
