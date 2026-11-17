@@ -316,7 +316,7 @@ export function EliteRadarHub({
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Sent</span><span className="text-xl font-bold text-emerald-400">{sentCount}</span></div>
                 <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Queue</span><span className="text-xl font-bold">{totalCount}</span></div>
-                <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Vault</span><span className="text-xl font-bold text-amber-400">{quarantineVault.length}</span></div>
+                <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Remaining</span><span className="text-xl font-bold">{Math.max(0, totalCount - sentCount)}</span></div>
               </div>
             </div>
             <p className="rounded-xl border border-white/10 bg-[#121c2e] p-4 text-[12px] text-white/70">
