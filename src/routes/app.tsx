@@ -2996,7 +2996,7 @@ function Workspace() {
                   </div>
                 )}
 
-                {menuView === "subscription" && (
+                {menuView === "subscription" ? (
                   <div className="animate-fade-in">
                     <button
                       onClick={() => setMenuView("settings")}
@@ -3034,7 +3034,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                       )}
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </>
