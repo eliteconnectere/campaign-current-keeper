@@ -44,41 +44,41 @@ export const prepareGmailConnect = createServerFn({ method: "POST" })
     if (!ent.premium && !ent.trialActive && !ent.communityPromo) {
       return { locked: true as const, reason: "trial_expired" as const, limit: 0 };
     }
-    // The owner and all active hotspot members share one subscription-wide Gmail pool.
-    // Each assistant also has a separate owner-configured personal cap.
+    // Company owner and Company Team Seat admins use the Company Gmail pool.
+    // Do not route them through the retired Hotspot/team_seats system.
     let total = (await listProfileRows(context.userId, CONNECTOR_ID)).length;
     let limit = ent.profileLimit;
-    try {
-      const team = await import("@/server/team.server");
-      const email = (context.claims as { email?: string } | undefined)?.email;
-      const personal = await team.assistantGmailCap(context.userId, email, CONNECTOR_ID);
-      if (personal && personal.used >= personal.limit) {
-        return { locked: true as const, reason: "profile_limit" as const, limit: personal.limit };
-      }
-
-      const gate = await team.teamSharedProfileGate(
-        context.userId,
-        email,
-        ent.profileLimit,
-        CONNECTOR_ID,
-      );
-      if (gate.shared) {
-        total = gate.used;
-        limit = gate.limit;
-        // Member allocations are reserved up front, so a member may use their
-        // own remaining allocation even when the entire plan pool is reserved.
-        if (limit <= 0 || (personal ? total > limit : total >= limit)) {
-          return { locked: true as const, reason: "profile_limit" as const, limit };
-        }
-      } else if (total >= limit) {
+    if (ent.company || ent.companyAdmin) {
+      if (total >= limit) {
         return { locked: true as const, reason: "profile_limit" as const, limit };
       }
-    } catch (e) {
-      console.error("team profile gate", e);
-      // Fail closed: never start a new OAuth flow if the shared subscription
-      // allowance cannot be checked reliably.
-      return { locked: true as const, reason: "profile_limit" as const, limit: 0 };
+    } else {
+      // Legacy paid-plan sharing remains isolated from Company Team Seats.
+      try {
+        const team = await import("@/server/team.server");
+        const email = (context.claims as { email?: string } | undefined)?.email;
+        const personal = await team.assistantGmailCap(context.userId, email, CONNECTOR_ID);
+        if (personal && personal.used >= personal.limit) {
+          return { locked: true as const, reason: "profile_limit" as const, limit: personal.limit };
+        }
+        const gate = await team.teamSharedProfileGate(
+          context.userId, email, ent.profileLimit, CONNECTOR_ID,
+        );
+        if (gate.shared) {
+          total = gate.used;
+          limit = gate.limit;
+          if (limit <= 0 || (personal ? total > limit : total >= limit)) {
+            return { locked: true as const, reason: "profile_limit" as const, limit };
+          }
+        } else if (total >= limit) {
+          return { locked: true as const, reason: "profile_limit" as const, limit };
+        }
+      } catch (e) {
+        console.error("team profile gate", e);
+        return { locked: true as const, reason: "profile_limit" as const, limit: 0 };
+      }
     }
+
     if (!ent.premium && (await connectedTodayCount(context.userId, CONNECTOR_ID)) >= ent.profilesPerDay) {
       return { locked: true as const, reason: "daily_connect" as const, limit: ent.profilesPerDay };
     }
