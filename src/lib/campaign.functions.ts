@@ -129,6 +129,7 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       total_recipients: data.recipients.length,
       sent_count: 0,
       failed_count: 0,
+      permanent_send_protection: true,
       delay_seconds: data.delaySeconds,
       approved_at: now,
       scheduled_at: now,
