@@ -38,9 +38,9 @@ async function authorizedByGitHubActions(token: string): Promise<boolean> {
       || !audienceMatches
       || Number(claims["exp"] ?? 0) <= now
       || Number(claims["nbf"] ?? 0) > now + 30
-      || claims["repository"] !== "eliteconnectere/eliteconnectere"
+      || claims["repository"] !== "eliteconnectere/campaign-current-keeper"
       || claims["ref"] !== "refs/heads/main"
-      || claims["workflow_ref"] !== "eliteconnectere/eliteconnectere/.github/workflows/campaign-execution-worker.yml@refs/heads/main") {
+      || claims["workflow_ref"] !== "eliteconnectere/campaign-current-keeper/.github/workflows/campaign-execution-worker.yml@refs/heads/main") {
       return false;
     }
 
