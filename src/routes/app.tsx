@@ -2275,7 +2275,7 @@ function Workspace() {
 
   return (
     <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden bg-white pb-6">
-      <header />eader>
+      <header />
 
       <main
         className={`mx-auto max-w-xl space-y-3 px-4 py-4 ${
