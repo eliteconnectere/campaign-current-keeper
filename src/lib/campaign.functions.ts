@@ -93,6 +93,7 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       .in("status", ["queued", "running", "paused"])
       .eq("subject", data.subject)
       .eq("body", data.body)
+      .eq("delay_seconds", data.delaySeconds)
       .order("created_at", { ascending: false })
       .limit(5);
     if (activeError) throw activeError;
