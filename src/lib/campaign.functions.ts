@@ -117,7 +117,7 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       name: data.name,
       subject: data.subject,
       body: data.body,
-      status: "queued",
+      status: "pending_approval",
       total_recipients: data.recipients.length,
       sent_count: 0,
       failed_count: 0,
@@ -146,6 +146,21 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       }
     }
 
+    // Publish to the worker only after every recipient row has been persisted.
+    const { data: queuedCampaign, error: queueError } = await supabaseAdmin.from("campaigns").update({
+      status: "queued",
+      approved_at: now,
+      scheduled_at: now,
+      next_run_at: now,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", campaign.id).eq("user_id", context.userId).eq("status", "pending_approval")
+      .select("id,status,total_recipients,sent_count").single();
+    if (queueError || !queuedCampaign) {
+      await supabaseAdmin.from("campaigns").delete().eq("id", campaign.id).eq("user_id", context.userId);
+      throw queueError ?? new Error("Campaign recipients were saved, but the campaign could not enter the execution queue.");
+    }
+
     const dispatch = await kickCampaignWorker(campaign.id);
     if (!dispatch.dispatched) {
       // Leave the durable queue intact: Railway's poller will claim it on its next cycle.
@@ -156,7 +171,7 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
         updated_at: new Date().toISOString(),
       }).eq("id", campaign.id).eq("user_id", context.userId);
     }
-    return { campaignId: campaign.id, status: campaign.status, reused: false, dispatch };
+    return { campaignId: campaign.id, status: queuedCampaign.status, reused: false, dispatch };
   });
 
 export const listRexCampaigns = createServerFn({ method: "GET" })
