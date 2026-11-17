@@ -738,7 +738,7 @@ function Workspace() {
   const [teamReturnToSettings, setTeamReturnToSettings] = useState(false);
   const [teamCanManage, setTeamCanManage] = useState(false);
   const [radarOpen, setRadarOpen] = useState(false);
-  const [radarTab, setRadarTab] = useState<"radar" | "vault" | "snippets" | "monitor">("radar");
+  const [radarTab, setRadarTab] = useState<"radar" | "snippets" | "monitor">("radar");
   const [assistOpen, setAssistOpen] = useState(false);
   const [rexInitialPrompt, setRexInitialPrompt] = useState("");
   const [rexStudioOpen, setRexStudioOpen] = useState(false);
@@ -1642,7 +1642,6 @@ function Workspace() {
       localStorage.removeItem("ec-engine-resume");
     } catch {}
     setNextInSec(null);
-    setCleanupHandled(false);
     // Clear client-side send locks so a new campaign (new body/subject) can run.
     // Server Permanent Send Protection still blocks the EXACT same message only.
     sentRecipientEmailsRef.current = new Set();
@@ -1838,7 +1837,6 @@ function Workspace() {
       setEditing(false);
       setTab("valid");
       setGenTab("all");
-      setCleanupHandled(false);
       rememberSmartFillSet(sourceRecipients);
     }
     // Rebuild from the live template editor state every time. Never reuse stale
@@ -2193,7 +2191,7 @@ function Workspace() {
             } else if (p === "rex-monitor" || p === "campaign-monitor") {
               setRexStudioOpen(true);
               window.setTimeout(() => document.querySelector("[data-rex-monitor]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
-            } else if (p === "radar" || p === "vault" || p === "snippets" || p === "monitor") {
+            } else if (p === "radar" || p === "snippets" || p === "monitor") {
               setRadarTab(p);
               setRadarOpen(true); showPanelTip("radar");
             } else if (p === "settings") {
