@@ -554,6 +554,7 @@ function Workspace() {
   const [activeServerCampaignId, setActiveServerCampaignId] = useState<string | null>(null);
   const [serverCampaignStatus, setServerCampaignStatus] = useState<string>("idle");
   const [serverCampaignCounts, setServerCampaignCounts] = useState({ sent: 0, total: 0, failed: 0 });
+  const serverCampaignStatusRef = useRef<string>("idle");
   const sentRecipientEmailsRef = useRef<Set<string>>(new Set());
   const [genTab, setGenTab] = useState<"all" | "sent" | "pending">("all");
   const [generatedVisibleLimit, setGeneratedVisibleLimit] = useState(400);
@@ -687,8 +688,12 @@ function Workspace() {
         const sent = Number(campaign.sent_count ?? 0);
         const total = Number(campaign.total_recipients ?? 0);
         const failed = Number(campaign.failed_count ?? 0);
+        const previousStatus = serverCampaignStatusRef.current;
+        serverCampaignStatusRef.current = campaign.status;
         setServerCampaignStatus(campaign.status);
         setServerCampaignCounts({ sent, total, failed });
+        if (campaign.status === "running" && previousStatus !== "running") playSound("campaign");
+        if (campaign.status === "completed" && previousStatus !== "completed" && ["queued", "running"].includes(previousStatus)) playSound("campaignLong");
         const sentEmails = new Set(result.sentEmails);
         setGenerated((previous) => previous.map((row) => ({
           ...row,
@@ -1932,11 +1937,13 @@ function Workspace() {
       } });
       setActiveServerCampaignId(queued.campaignId);
       setServerCampaignStatus(queued.status);
+      serverCampaignStatusRef.current = queued.status;
       setEngine(queued.status === "paused" ? "paused" : "sending");
       setScout(queued.status !== "paused");
       setNextInSec(delay);
       log("Campaign saved to Supabase: " + recipientsForQueue.length + " unique recipients. The server worker now owns delivery.", "campaignStarted");
-      toast.success("Campaign queued — server delivery continues independently of this tab.", {
+      playSound("campaign");
+      toast.success("Campaign started — live results will appear below.", {
         description: queued.dispatch?.dispatched ? "The worker was kicked immediately." : "The persistent worker will pick it up on its next poll.",
       });
       return true;
@@ -3447,9 +3454,7 @@ function Workspace() {
                       }`}
                     />
                     {engine === "sending"
-                      ? nextInSec != null && nextInSec > 0
-                        ? `SENDING · Next in ${nextInSec}s`
-                        : "SENDING"
+                      ? serverCampaignStatus === "queued" ? "STARTING" : nextInSec != null && nextInSec > 0 ? `SENDING · Next in ${nextInSec}s` : "SENDING"
                       : engine === "paused"
                         ? "PAUSED"
                         : "IDLE"}
@@ -3537,13 +3542,30 @@ function Workspace() {
                       startCampaign();
                     }}
                   />
-                  <span className="text-[13px] font-semibold text-ink">Server Worker</span>
+                  <span className="text-[13px] font-semibold text-ink">Live campaign</span>
                 </div>
                 <span className="rounded-full border border-line bg-white px-2.5 py-1 text-[10px] font-bold tracking-widest text-ink">
-                  {scout ? "RUNNING" : "IDLE"}
+                  {serverCampaignStatus === "queued" ? "STARTING" : serverCampaignStatus === "running" ? "SENDING" : serverCampaignStatus === "completed" ? "COMPLETED" : serverCampaignStatus === "failed" ? "FAILED" : serverCampaignStatus === "paused" ? "PAUSED" : "IDLE"}
                 </span>
               </div>
 
+              {activeServerCampaignId && (
+                <div className="mt-3 rounded-xl border border-line bg-white p-3" aria-live="polite">
+                  <div className="mb-2 flex items-center justify-between text-[12px]">
+                    <span className="font-semibold text-ink">Campaign progress</span>
+                    <span className="font-bold text-brand">{serverCampaignCounts.total > 0 ? Math.round((serverCampaignCounts.sent / serverCampaignCounts.total) * 100) : 0}%</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-line">
+                    <div className="h-full rounded-full bg-brand transition-all duration-700" style={{ width: `${serverCampaignCounts.total > 0 ? Math.min(100, (serverCampaignCounts.sent / serverCampaignCounts.total) * 100) : 0}%` }} />
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                    <div><div className="text-[17px] font-bold text-ink">{serverCampaignCounts.sent.toLocaleString()}</div><div className="label-caps">Sent</div></div>
+                    <div><div className="text-[17px] font-bold text-ink">{pending.toLocaleString()}</div><div className="label-caps">Remaining</div></div>
+                    <div><div className="text-[17px] font-bold text-brand">{serverCampaignCounts.failed.toLocaleString()}</div><div className="label-caps">Failed</div></div>
+                  </div>
+                  <p className="mt-2 text-center text-[10px] text-ink-soft">Updates automatically from confirmed campaign results.</p>
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span data-tour="pace" className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
                   <Timer className="size-3.5 text-brand" /> Delay:
