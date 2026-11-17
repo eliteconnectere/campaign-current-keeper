@@ -6,13 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getWorkspaceDisplaySession } from "@/features/workspace/offline-session";
 import { connectGmailAccount } from "@/lib/gmailConnect";
-import { enqueueCampaign, getRexCampaignWorkspaceData } from "@/lib/campaign.functions";
+import { controlRexManagedCampaign, enqueueCampaign, getRexCampaignWorkspaceData } from "@/lib/campaign.functions";
 import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/workspace-sync.functions";
 import {
   disconnectGmailProfile,
   listGmailProfiles,
   setGmailTarget,
-  sendGmailMessage,
   testGmailProfile,
   type GmailProfile,
 } from "@/lib/gmail.functions";
@@ -91,7 +90,6 @@ import {
   type SmartFillSet,
   type WorkspaceSnapshot,
 } from "@/features/workspace/persist";
-import { useLongPress } from "@/features/workspace/useLongPress";
 import { Onboarding } from "@/features/workspace/Onboarding";
 import { AppealsPanel } from "@/features/admin/AppealsPanel";
 import { EliteTips, ELITE_TIPS, resetTour, setTourEnabled, tourDismissed, showPanelTip } from "@/features/workspace/HandTour";
@@ -134,7 +132,7 @@ import { startCheckout } from "@/lib/paystack.functions";
 import { GOOGLE_REVIEW_MODE } from "@/lib/reviewMode";
 import { scanCampaignContent, safetyBlockMessage } from "@/lib/contentSafety";
 import { ReviewCRM } from "@/features/workspace/ReviewCRM";
-import { getEntitlements, recordStandardSend, type Entitlements } from "@/lib/billing.functions";
+import { getEntitlements, type Entitlements } from "@/lib/billing.functions";
 import { scanDomains } from "@/lib/domainScan.functions";
 import { ExpiryReminder } from "@/features/billing/ExpiryReminder";
 import { PromoChip } from "@/features/billing/PromoChip";
@@ -513,7 +511,7 @@ function Workspace() {
   const cloudWorkspaceLastPayloadRef = useRef<string | null>(null);
   const [accepted, setAccepted] = useState(true);
 
-  const [mode, setMode] = useState<"standard" | "elite" | "both">("standard");
+  const [mode, setMode] = useState<"standard" | "elite" | "both">("elite");
   // One-time local workspace cleanup. Preserve the Supabase Master Login:
   // newly verified users must remain signed in and continue into the workspace.
   useEffect(() => {
@@ -529,7 +527,7 @@ function Workspace() {
     const on = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       const tip = ELITE_TIPS.find((t) => t.id === id);
-      if (tip) setMode(tip.when);
+      if (tip) setMode("elite");
     };
     window.addEventListener("ec:show-tip", on);
     return () => window.removeEventListener("ec:show-tip", on);
@@ -551,6 +549,8 @@ function Workspace() {
   const [campaignRuns, setCampaignRuns] = useState<CampaignExecution[]>([]);
   const [persistedCampaignWorkspace, setPersistedCampaignWorkspace] = useState<{ campaigns: any[]; recipients: any[]; sentLast24Hours: number; source: string; truncated: boolean }>({ campaigns: [], recipients: [], sentLast24Hours: 0, source: 'server_campaigns', truncated: false });
   const activeCampaignIdRef = useRef<string | null>(null);
+  const [activeServerCampaignId, setActiveServerCampaignId] = useState<string | null>(null);
+  const [serverCampaignStatus, setServerCampaignStatus] = useState<string>("idle");
   const sentRecipientEmailsRef = useRef<Set<string>>(new Set());
   const [genTab, setGenTab] = useState<"all" | "sent" | "pending">("all");
 
@@ -742,35 +742,6 @@ function Workspace() {
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioReturnToSettings, setStudioReturnToSettings] = useState(false);
   const [featureStudioReturnToSettings, setFeatureStudioReturnToSettings] = useState(false);
-  const [vaultOpen, setVaultOpen] = useState(false);
-  const [quarantineVault, setQuarantineVault] = useState<Recipient[]>(() => {
-    try {
-      const saved = localStorage.getItem("ec.quarantine-vault");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("ec.quarantine-vault", JSON.stringify(quarantineVault));
-    } catch {}
-  }, [quarantineVault]);
-
-  function archiveToVault(items: Recipient[]) {
-    if (items.length === 0) return;
-    setQuarantineVault((prev) => {
-      const existing = new Set(prev.map((p) => p.email.trim().toLowerCase()));
-      const toAdd = items.filter((item) => {
-        const email = item.email.trim().toLowerCase();
-        if (!email || existing.has(email)) return false;
-        existing.add(email);
-        return true;
-      });
-      return [...toAdd, ...prev];
-    });
-  }
 
   const [featureStudio, setFeatureStudio] = useState<"smartFill" | "tracker" | "planner" | "activity" | "sending" | "nightMode" | null>(null);
   const [featureStudioFilter, setFeatureStudioFilter] = useState<{ campaign?: string; activity?: string; runId?: string }>({});
@@ -874,8 +845,6 @@ function Workspace() {
 
   const [confirming, setConfirming] = useState<
     | { kind: "profile"; id: string; email: string }
-    | { kind: "duplicate" | "risky"; count: number }
-    | { kind: "cleanup"; duplicate: number; risky: number }
     | { kind: "erase" }
     | {
         kind: "setting";
@@ -885,7 +854,6 @@ function Workspace() {
       }
     | null
   >(null);
-  const [cleanupHandled, setCleanupHandled] = useState(false);
   const [eraseRequest, setEraseRequest] = useState<{ status: "countdown"; requested_at: string; expires_at: string } | null>(null);
   const [eraseStatusChecked, setEraseStatusChecked] = useState(false);
   const [eraseNow, setEraseNow] = useState(Date.now());
