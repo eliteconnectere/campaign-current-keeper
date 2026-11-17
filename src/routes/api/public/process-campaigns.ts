@@ -192,6 +192,7 @@ async function processCampaigns(onlyCampaignId?: string) {
   let processed = 0;
   let completed = 0;
   let paused = 0;
+  let emailsSent = 0;
   await Promise.all((campaigns ?? []).map(async (campaign: any) => {
     if (Date.now() - workerStartedAt >= WORKER_BUDGET_MS) { await releaseCampaignLease(supabaseAdmin, campaign); return; }
     let campaignProcessed = 0;
@@ -377,6 +378,7 @@ async function processCampaigns(onlyCampaignId?: string) {
             }
             if (response.ok) {
               deliveryOutcomeMayHaveSucceeded = true;
+              emailsSent += 1;
               await recordSend(candidate.row.email_key);
               candidate.usage.used += 1;
               if (candidate.usage.used >= candidate.usage.limit) candidate.usage.exhausted = true;
@@ -486,7 +488,7 @@ async function processCampaigns(onlyCampaignId?: string) {
     await releaseCampaignLease(supabaseAdmin, campaign);
   }));
   console.info("[campaign-worker] completed", { campaigns: campaigns?.length ?? 0, processed, completed, paused });
-  return Response.json({ ok: true, campaigns: campaigns?.length ?? 0, processed, completed, paused });
+  return Response.json({ ok: true, campaigns: campaigns?.length ?? 0, processed, emailsSent, completed, paused });
 }
 
 export const Route = createFileRoute("/api/public/process-campaigns")({
