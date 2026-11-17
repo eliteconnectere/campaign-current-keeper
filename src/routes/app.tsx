@@ -1810,7 +1810,6 @@ function Workspace() {
     setTab("valid");
     setFrom(1);
     setTo(imported.length);
-    setCleanupHandled(false);
     log(`${imported.length.toLocaleString()} recipients imported into the active workspace from ${sourceName}. Validate the list before executing a campaign.`);
     toast.success(`${imported.length.toLocaleString()} recipients loaded into the workspace. Validate the list before sending.`);
     return true;
