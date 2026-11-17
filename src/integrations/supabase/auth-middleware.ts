@@ -35,10 +35,10 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
   async ({ next }) => {
     
     // Public fallbacks so hosts without injected env (e.g. Vercel) still work.
-    const SUPABASE_URL = process.env['SUPABASE_URL'] || 'https://irzbexiuhiufyjwjzlux.supabase.co';
+    const SUPABASE_URL = process.env['SUPABASE_URL'] || 'https://rxpvttdhayzrpzcgpxyw.supabase.co';
     const SUPABASE_PUBLISHABLE_KEY =
       process.env['SUPABASE_PUBLISHABLE_KEY'] ||
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlyemJleGl1aGl1Znlqd2p6bHV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMDg1OTcsImV4cCI6MjEwNDc4NDU5N30.MHeyrGhje1UT9KwJkAJax23fjnsazQut_8MOQQHgZdo';
+      'sb_publishable_miR17btWYdQYb9-X4NlDuA_DdbqPCv2';
 
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       const missing = [
