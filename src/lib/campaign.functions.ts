@@ -100,10 +100,24 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
     for (const existing of active ?? []) {
       if (Number(existing.total_recipients) !== incoming.length) continue;
       const { data: rows, error } = await supabaseAdmin.from("campaign_recipients")
-        .select("email").eq("campaign_id", existing.id);
+        .select("email,message_subject,message_body").eq("campaign_id", existing.id);
       if (error) throw error;
-      const emails = (rows ?? []).map((r: { email: string }) => String(r.email).trim().toLowerCase()).sort();
-      if (emails.length === incoming.length && emails.every((email: string, i: number) => email === incoming[i])) {
+      const saved = (rows ?? []).map((row: { email: string; message_subject?: string | null; message_body?: string | null }) => ({
+        email: String(row.email).trim().toLowerCase(),
+        subject: String(row.message_subject ?? ""),
+        body: String(row.message_body ?? ""),
+      })).sort((a, b) => a.email.localeCompare(b.email));
+      const requested = data.recipients.map((row) => ({
+        email: row.email,
+        subject: row.subject,
+        body: row.body,
+      })).sort((a, b) => a.email.localeCompare(b.email));
+      const identical = saved.length === incoming.length && saved.every((row, index) =>
+        row.email === requested[index]?.email &&
+        row.subject === requested[index]?.subject &&
+        row.body === requested[index]?.body
+      );
+      if (identical) {
         let status = existing.status;
         if (status === "paused") {
           const { data: resumed, error: resumeError } = await supabaseAdmin.from("campaigns").update({
