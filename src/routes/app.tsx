@@ -562,8 +562,6 @@ function Workspace() {
   const permanentSendProtection = true; // always on — no toggle
   const [showProtectionDetails, setShowProtectionDetails] = useState(false);
   const delayRef = useRef(3);
-  const [oneSecAsk, setOneSecAsk] = useState(false);
-  const oneSecOkRef = useRef(false);
   delayRef.current = delay;
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(50);
@@ -575,8 +573,6 @@ function Workspace() {
   const [connectNote, setConnectNote] = useState("");
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [engine, setEngine] = useState<"idle" | "sending" | "paused">("idle");
-  const engineRef = useRef<"idle" | "sending" | "paused">("idle");
-  engineRef.current = engine;
   const [autoResumePending, setAutoResumePending] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   useEffect(() => {
@@ -1783,9 +1779,6 @@ function Workspace() {
     generatedRef.current = generated;
   }, [generated]);
   const activeRef = useRef<string | null>(null);
-  /** one send at a time, and recipients already handed to Gmail this session */
-  const sendLockRef = useRef(false);
-  const claimedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     activeRef.current = activeProfileId;
   }, [activeProfileId]);
@@ -1930,7 +1923,7 @@ function Workspace() {
       const seen = new Set<string>();
       const recipientsForQueue = inRange.flatMap((row) => {
         const email = row.email.trim().toLowerCase();
-        if (!/^[^\\s@]+@[^\\s@]+\\.[a-zA-Z]{2,}$/.test(email) || seen.has(email)) return [];
+        if (!/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(email) || seen.has(email)) return [];
         if (!row.subject.trim() || !row.body.trim()) return [];
         seen.add(email);
         return [{ email, name: row.name, subject: row.subject, body: row.body }];
@@ -4073,46 +4066,6 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
       {chatSettingsOpen && (
         <ChatSettings settings={settings} onChange={updateSettings} onClose={() => { setChatSettingsOpen(false); const back = chatSettingsReturnToSettings; setChatSettingsReturnToSettings(false); if (back) { setPanel("menu"); setMenuView("settings"); } }} />
       )}
-      {oneSecAsk && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-ink/50 p-4 sm:items-center" role="dialog" aria-modal="true">
-          <div className="w-full max-w-sm rounded-2xl bg-background p-4 shadow-xl">
-            <h3 className="text-[15px] font-bold text-ink">
-              {delay >= 8 ? "8-second delay is the maximum available pace" : "Before you start this campaign"}
-            </h3>
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
-We recommend a <b className="text-ink">5-second delay</b> between emails. Choose from 3–8 seconds because Gmail response time can vary, and avoid sending too quickly because it can make your Gmail account look automated and
-              Google can restrict it or lower its reputation, sending future emails to spam.
-            </p>
-            <p className="mt-1.5 text-[12px] text-ink">Current delay: <b>{delay}s</b></p>
-            <a href="/learn-more#pacing-delay" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[12px] font-semibold text-brand underline">
-              Learn more: Email Sending Best Practices &amp; Risks
-            </a>
-            {delay < 3 && (
-              <button
-                onClick={() => {
-setDelay(5);
-  delayRef.current = 5;
-                  oneSecOkRef.current = true;
-                  setOneSecAsk(false);
-                  startCampaign();
-                }}
-                className="mt-3 w-full rounded-xl border border-brand px-3 py-2 text-[13px] font-semibold text-brand"
-              >Use 3 seconds and start</button>
-            )}
-            <div className="mt-3 flex gap-2">
-              <button onClick={() => setOneSecAsk(false)} className="flex-1 rounded-xl border border-line px-3 py-2 text-[13px] font-semibold text-ink">Cancel</button>
-              <button
-                onClick={() => {
-                  oneSecOkRef.current = true;
-                  setOneSecAsk(false);
-                  startCampaign(true);
-                }}
-                className="flex-1 rounded-xl bg-brand px-3 py-2 text-[13px] font-semibold text-primary-foreground"
-              >Continue</button>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="fixed top-14 right-3 z-[55] flex flex-col items-end gap-1.5">
         {(engine === "sending" || engine === "paused") && (
           <CampaignTimerChip
@@ -4586,7 +4539,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           account={{
             mode,
             engineStatus: engine,
-            sendInFlight: sendLockRef.current,
+            sendInFlight: false,
             plan: entitlements?.plan ?? "free",
             connectedGmails: profiles.length,
             currentGmailSenderEmail: current?.email ?? "",
