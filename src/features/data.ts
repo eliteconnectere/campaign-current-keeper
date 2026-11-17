@@ -118,7 +118,7 @@ const KNOWN_TYPO_DOMAINS = new Set([
 const EMAIL_SYNTAX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 function recipientFromEmail(rawEmail: string): Recipient | null {
-  const email = rawEmail.trim().replace(/^[<("'\\s]+|[>),;."'\\s]+$/g, "").toLowerCase();
+  const email = rawEmail.trim().replace(/^</, "").replace(/[>),;.]+$/, "").toLowerCase();
   if (!email || !EMAIL_SYNTAX.test(email)) return null;
 
   const [handle = "", domain = ""] = email.split("@");
