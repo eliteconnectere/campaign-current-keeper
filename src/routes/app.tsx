@@ -1149,7 +1149,7 @@ function Workspace() {
       }
       if (cancelled) return;
       if (snapshot) {
-        if (snapshot.mode) setMode(snapshot.mode);
+        if (snapshot.mode) setMode("elite");
         if (typeof snapshot.raw === 'string') setRaw(snapshot.raw);
         if (snapshot.recipients) setRecipients(snapshot.recipients.map((r) => ((r.status as string) === 'invalid' ? { ...r, status: 'risky' as const } : r)));
         if (typeof snapshot.validated === 'boolean') setValidated(snapshot.validated);
@@ -1186,7 +1186,6 @@ function Workspace() {
         if (snapshot.notes?.length) setNotes(snapshot.notes);
         if (snapshot.smartFillHistory) setSmartFillHistory(snapshot.smartFillHistory);
         if (snapshot.activeProfileId) setActiveProfileId(snapshot.activeProfileId);
-        if (typeof snapshot.cleanupHandled === 'boolean') setCleanupHandled(snapshot.cleanupHandled);
       }
       setReady(true);
     };
@@ -1273,7 +1272,6 @@ function Workspace() {
       notes,
       smartFillHistory,
       activeProfileId,
-      cleanupHandled,
     sentRecipientEmails,
     campaignHistory,
     campaignRuns,
@@ -1324,7 +1322,6 @@ function Workspace() {
     notes,
     smartFillHistory,
     activeProfileId,
-    cleanupHandled,
     sentRecipientEmails,
   campaignHistory,
     campaignRuns,
@@ -2127,7 +2124,6 @@ function Workspace() {
 } else if (p === "workspace-menu" || p === "logout" || p === "export-data" || p === "reset-workspace" || p === "erase-data" || p === "clear-cache") {
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
               setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
@@ -3071,7 +3067,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
             <button
               onClick={() => switchMode("elite")}
               className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-300 ${
-                mode === "standard" ? "bg-ink text-white" : "text-ink-soft"
+                "text-ink-soft"
               }`}
             >
               <Send className="size-3.5" /> Standard
@@ -4005,7 +4001,6 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                 setRexStudioOpen(false);
                 setFeatureStudio(null);
                 setRadarOpen(false);
-                setVaultOpen(false);
                 setPanel("none");
                 setStudioOpen(false);
                 setAssistOpen(true);
@@ -4317,11 +4312,11 @@ Please explain this feature and help me with it. Keep this as a discussion first
                     <span className="font-semibold text-ink">2nd flag in the same month:</span> suspension extends to <span className="font-semibold text-ink">30 days</span> with a tighter capacity cap.
                   </li>
                   <li>
-                    <span className="font-semibold text-ink">3rd flag in the same month:</span> the address is <span className="font-semibold text-ink">permanently blocked</span> from connecting on Elite Engine. Standard Mode remains available.
+                    <span className="font-semibold text-ink">3rd flag in the same month:</span> the address is <span className="font-semibold text-ink">permanently blocked</span> from connecting on Elite Engine. the server queue remains the only supported delivery path.
                   </li>
                 </ul>
                 <p className="mt-2">
-                  Standard Mode (mailto) is not affected by these Engine suspensions. Always connect Gmail accounts you are allowed to use for outreach, keep pacing sensible, and avoid lists that produce high bounce or spam complaints.
+                  All campaign delivery runs through the persistent Gmail API worker. Always connect Gmail accounts you are allowed to use for outreach, keep pacing sensible, and avoid lists that produce high bounce or spam complaints.
                 </p>
               </section>
 
@@ -4617,7 +4612,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
               generatedMessages: generated.slice(0, 100).map(({ email, name, company, template, subject, body, sent }) => ({ email, name, company, template, subject, body, sent })),
               campaignSentCount: sentCount,
               serverCampaigns: persistedCampaignWorkspace.campaigns, serverCampaignRecipients: persistedCampaignWorkspace.recipients, serverSentLast24Hours: persistedCampaignWorkspace.sentLast24Hours, campaignDataSource: persistedCampaignWorkspace.source, localWorkspaceRunCache: campaignRuns.slice(0, 5).map(run => ({ id: run.id, status: run.status, startedAt: run.startedAt, sentCount: run.sentCount, skippedCount: run.skippedCount, failedCount: run.failedCount })),
-              quarantinedCount: quarantineVault.length,
               truncated: recipients.length > 100 || generated.length > 100,
             }),
             walkthrough: tipsOff ? "off" : "on",
@@ -4654,7 +4648,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
             setRexPersonalDestinationId(null);
             setFeatureStudio(null);
             setRadarOpen(false);
-            setVaultOpen(false);
             setPanel("none");
             setStudioOpen(false);
             setAssistOpen(true);
