@@ -1243,6 +1243,7 @@ function Workspace() {
     const snapshot: WorkspaceSnapshot = {
       v: 1,
       mode: "elite",
+      cleanupHandled: true,
       raw,
       recipients,
       validated,
