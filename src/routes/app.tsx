@@ -666,6 +666,7 @@ function Workspace() {
       if (!active) return;
       setActiveServerCampaignId(active.id);
       setServerCampaignStatus(active.status);
+      serverCampaignStatusRef.current = active.status;
       setServerCampaignCounts({
         sent: Number(active.sent_count ?? 0),
         total: Number(active.total_recipients ?? 0),
@@ -1942,8 +1943,7 @@ function Workspace() {
       setScout(queued.status !== "paused");
       setNextInSec(delay);
       log("Campaign saved to Supabase: " + recipientsForQueue.length + " unique recipients. The server worker now owns delivery.", "campaignStarted");
-      playSound("campaign");
-      toast.success("Campaign started — live results will appear below.", {
+      toast.success("Campaign queued — live results will appear below.", {
         description: queued.dispatch?.dispatched ? "The worker was kicked immediately." : "The persistent worker will pick it up on its next poll.",
       });
       return true;
