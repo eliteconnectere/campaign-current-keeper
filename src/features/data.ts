@@ -115,7 +115,7 @@ const KNOWN_TYPO_DOMAINS = new Set([
   "outlok.com", "outloo.com", "outlook.con"
 ]);
 
-const EMAIL_SYNTAX = /^[^\\s@]+@[^\\s@]+\\.[a-zA-Z]{2,}$/;
+const EMAIL_SYNTAX = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 function recipientFromEmail(rawEmail: string): Recipient | null {
   const email = rawEmail.trim().replace(/^[<("'\\s]+|[>),;."'\\s]+$/g, "").toLowerCase();
@@ -138,7 +138,7 @@ function recipientFromEmail(rawEmail: string): Recipient | null {
 }
 
 export function parseList(raw: string): Recipient[] {
-  const found = raw.match(/[^\\s,;<>"']+@[^\\s,;<>"']+/g) ?? [];
+  const found = raw.match(/[^\s,;<>"']+@[^\s,;<>"']+/g) ?? [];
   const seen = new Set<string>();
   const recipients: Recipient[] = [];
 
@@ -156,11 +156,11 @@ export function parseList(raw: string): Recipient[] {
 
 /** Parse a plain-text or CSV recipient file, retaining name/company columns when supplied. */
 export function parseRecipientFileText(raw: string): Recipient[] {
-  const source = raw.replace(/^\\uFEFF/, "").trim();
+  const source = raw.replace(/^\uFEFF/, "").trim();
   if (!source) return [];
 
-  const firstLine = source.split(/\\r?\\n/, 1)[0] ?? "";
-  const delimiter = firstLine.includes("\\t") ? "\\t" : firstLine.includes(";") && !firstLine.includes(",") ? ";" : ",";
+  const firstLine = source.split(/\r?\n/, 1)[0] ?? "";
+  const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") && !firstLine.includes(",") ? ";" : ",";
   const parseRow = (line: string): string[] => {
     const cells: string[] = [];
     let value = "";
@@ -185,7 +185,7 @@ export function parseRecipientFileText(raw: string): Recipient[] {
   const seen = new Set<string>();
   const result: Recipient[] = [];
 
-  for (const line of source.split(/\\r?\\n/).slice(1)) {
+  for (const line of source.split(/\r?\n/).slice(1)) {
     if (!line.trim()) continue;
     const cells = parseRow(line);
     const recipient = recipientFromEmail(cells[emailIndex] ?? "");
