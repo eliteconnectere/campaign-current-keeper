@@ -396,6 +396,32 @@ async function processCampaigns(onlyCampaignId?: string) {
         }
         const hash = await bodyHash(recipientBody);
 
+        // Permanent protection is checked against the database audit ledger,
+        // not browser memory. A previously delivered exact message is completed
+        // as protected without calling Gmail again.
+        if (campaign.permanent_send_protection !== false) {
+          const { data: previousDelivery, error: protectionError } = await supabaseAdmin
+            .from("campaign_delivery_history")
+            .select("sent_at")
+            .eq("user_id", campaign.user_id)
+            .eq("recipient_email", String(recipient.email).trim().toLowerCase())
+            .eq("subject", recipientSubject)
+            .eq("body_hash", hash)
+            .order("sent_at", { ascending: true })
+            .limit(1)
+            .maybeSingle();
+          if (protectionError) throw new Error("Could not verify permanent send protection. The recipient will be retried safely.");
+          if (previousDelivery) {
+            await supabaseAdmin.from("campaign_recipients").update({
+              status: "sent",
+              sent_at: previousDelivery.sent_at,
+              last_error: null,
+              updated_at: new Date().toISOString(),
+            }).eq("id", recipient.id);
+            continue;
+          }
+        }
+
         let sent = false;
         let lastError: Error | null = null;
         for (let attempt = 0; attempt < profiles.length; attempt += 1) {

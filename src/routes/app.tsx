@@ -6,13 +6,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getWorkspaceDisplaySession } from "@/features/workspace/offline-session";
 import { connectGmailAccount } from "@/lib/gmailConnect";
-import { enqueueCampaign, getRexCampaignWorkspaceData } from "@/lib/campaign.functions";
+import { controlRexManagedCampaign, enqueueCampaign, getCampaignExecutionProgress, getRexCampaignWorkspaceData, listRexCampaigns } from "@/lib/campaign.functions";
 import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/workspace-sync.functions";
 import {
   disconnectGmailProfile,
   listGmailProfiles,
   setGmailTarget,
-  sendGmailMessage,
   testGmailProfile,
   type GmailProfile,
 } from "@/lib/gmail.functions";
@@ -91,8 +90,8 @@ import {
   type SmartFillSet,
   type WorkspaceSnapshot,
 } from "@/features/workspace/persist";
-import { useLongPress } from "@/features/workspace/useLongPress";
 import { Onboarding } from "@/features/workspace/Onboarding";
+import { useLongPress } from "@/features/workspace/useLongPress";
 import { AppealsPanel } from "@/features/admin/AppealsPanel";
 import { EliteTips, ELITE_TIPS, resetTour, setTourEnabled, tourDismissed, showPanelTip } from "@/features/workspace/HandTour";
 import { DidYouKnowHost } from "@/features/workspace/DidYouKnow";
@@ -134,7 +133,7 @@ import { startCheckout } from "@/lib/paystack.functions";
 import { GOOGLE_REVIEW_MODE } from "@/lib/reviewMode";
 import { scanCampaignContent, safetyBlockMessage } from "@/lib/contentSafety";
 import { ReviewCRM } from "@/features/workspace/ReviewCRM";
-import { getEntitlements, recordStandardSend, type Entitlements } from "@/lib/billing.functions";
+import { getEntitlements, type Entitlements } from "@/lib/billing.functions";
 import { scanDomains } from "@/lib/domainScan.functions";
 import { ExpiryReminder } from "@/features/billing/ExpiryReminder";
 import { PromoChip } from "@/features/billing/PromoChip";
@@ -513,7 +512,7 @@ function Workspace() {
   const cloudWorkspaceLastPayloadRef = useRef<string | null>(null);
   const [accepted, setAccepted] = useState(true);
 
-  const [mode, setMode] = useState<"standard" | "elite" | "both">("standard");
+  const [mode] = useState<"elite">("elite");
   // One-time local workspace cleanup. Preserve the Supabase Master Login:
   // newly verified users must remain signed in and continue into the workspace.
   useEffect(() => {
@@ -529,7 +528,7 @@ function Workspace() {
     const on = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       const tip = ELITE_TIPS.find((t) => t.id === id);
-      if (tip) setMode(tip.when);
+      
     };
     window.addEventListener("ec:show-tip", on);
     return () => window.removeEventListener("ec:show-tip", on);
@@ -551,8 +550,13 @@ function Workspace() {
   const [campaignRuns, setCampaignRuns] = useState<CampaignExecution[]>([]);
   const [persistedCampaignWorkspace, setPersistedCampaignWorkspace] = useState<{ campaigns: any[]; recipients: any[]; sentLast24Hours: number; source: string; truncated: boolean }>({ campaigns: [], recipients: [], sentLast24Hours: 0, source: 'server_campaigns', truncated: false });
   const activeCampaignIdRef = useRef<string | null>(null);
+  const campaignQueueLockRef = useRef(false);
+  const [activeServerCampaignId, setActiveServerCampaignId] = useState<string | null>(null);
+  const [serverCampaignStatus, setServerCampaignStatus] = useState<string>("idle");
+  const [serverCampaignCounts, setServerCampaignCounts] = useState({ sent: 0, total: 0, failed: 0 });
   const sentRecipientEmailsRef = useRef<Set<string>>(new Set());
   const [genTab, setGenTab] = useState<"all" | "sent" | "pending">("all");
+  const [generatedVisibleLimit, setGeneratedVisibleLimit] = useState(400);
 
   const [scout, setScout] = useState(false);
   const [delay, setDelay] = useState(5);
@@ -560,8 +564,6 @@ function Workspace() {
   const permanentSendProtection = true; // always on — no toggle
   const [showProtectionDetails, setShowProtectionDetails] = useState(false);
   const delayRef = useRef(3);
-  const [oneSecAsk, setOneSecAsk] = useState(false);
-  const oneSecOkRef = useRef(false);
   delayRef.current = delay;
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(50);
@@ -573,8 +575,6 @@ function Workspace() {
   const [connectNote, setConnectNote] = useState("");
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [engine, setEngine] = useState<"idle" | "sending" | "paused">("idle");
-  const engineRef = useRef<"idle" | "sending" | "paused">("idle");
-  engineRef.current = engine;
   const [autoResumePending, setAutoResumePending] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   useEffect(() => {
@@ -656,6 +656,55 @@ function Workspace() {
     const timer = window.setInterval(refresh, 60000);
     return () => { active = false; window.clearInterval(timer); };
   }, [uid]);
+  useEffect(() => {
+    if (!uid || activeServerCampaignId) return;
+    let live = true;
+    void listRexCampaigns().then(({ campaigns }) => {
+      if (!live) return;
+      const active = campaigns.find((campaign: any) => ["queued", "running", "paused"].includes(campaign.status));
+      if (!active) return;
+      setActiveServerCampaignId(active.id);
+      setServerCampaignStatus(active.status);
+      setServerCampaignCounts({
+        sent: Number(active.sent_count ?? 0),
+        total: Number(active.total_recipients ?? 0),
+        failed: Number(active.failed_count ?? 0),
+      });
+      setEngine(active.status === "paused" ? "paused" : "sending");
+      setScout(active.status !== "paused");
+    }).catch((error) => console.warn("Could not restore the active server campaign.", error));
+    return () => { live = false; };
+  }, [uid, activeServerCampaignId]);
+
+  useEffect(() => {
+    if (!uid || !activeServerCampaignId) return;
+    let live = true;
+    const refreshServerCampaign = async () => {
+      try {
+        const result = await getCampaignExecutionProgress({ data: { campaignId: activeServerCampaignId } });
+        if (!live) return;
+        const campaign = result.campaign;
+        const sent = Number(campaign.sent_count ?? 0);
+        const total = Number(campaign.total_recipients ?? 0);
+        const failed = Number(campaign.failed_count ?? 0);
+        setServerCampaignStatus(campaign.status);
+        setServerCampaignCounts({ sent, total, failed });
+        const sentEmails = new Set(result.sentEmails);
+        setGenerated((previous) => previous.map((row) => ({
+          ...row,
+          sent: sentEmails.has(row.email.trim().toLowerCase()),
+        })));
+        if (campaign.status === "paused") { setEngine("paused"); setScout(false); }
+        else if (["queued", "running"].includes(campaign.status)) { setEngine("sending"); setScout(true); }
+        else { setEngine("idle"); setScout(false); setNextInSec(null); }
+      } catch (error) {
+        console.warn("Campaign progress refresh failed; the server queue continues independently.", error);
+      }
+    };
+    void refreshServerCampaign();
+    const timer = window.setInterval(() => void refreshServerCampaign(), 3000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [uid, activeServerCampaignId]);
   const [authChecked, setAuthChecked] = useState(false);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [connectMethodOpen, setConnectMethodOpen] = useState(false);
@@ -692,7 +741,7 @@ function Workspace() {
   const [teamReturnToSettings, setTeamReturnToSettings] = useState(false);
   const [teamCanManage, setTeamCanManage] = useState(false);
   const [radarOpen, setRadarOpen] = useState(false);
-  const [radarTab, setRadarTab] = useState<"radar" | "vault" | "snippets" | "monitor">("radar");
+  const [radarTab, setRadarTab] = useState<"radar" | "snippets" | "monitor">("radar");
   const [assistOpen, setAssistOpen] = useState(false);
   const [rexInitialPrompt, setRexInitialPrompt] = useState("");
   const [rexStudioOpen, setRexStudioOpen] = useState(false);
@@ -742,35 +791,6 @@ function Workspace() {
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioReturnToSettings, setStudioReturnToSettings] = useState(false);
   const [featureStudioReturnToSettings, setFeatureStudioReturnToSettings] = useState(false);
-  const [vaultOpen, setVaultOpen] = useState(false);
-  const [quarantineVault, setQuarantineVault] = useState<Recipient[]>(() => {
-    try {
-      const saved = localStorage.getItem("ec.quarantine-vault");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("ec.quarantine-vault", JSON.stringify(quarantineVault));
-    } catch {}
-  }, [quarantineVault]);
-
-  function archiveToVault(items: Recipient[]) {
-    if (items.length === 0) return;
-    setQuarantineVault((prev) => {
-      const existing = new Set(prev.map((p) => p.email.trim().toLowerCase()));
-      const toAdd = items.filter((item) => {
-        const email = item.email.trim().toLowerCase();
-        if (!email || existing.has(email)) return false;
-        existing.add(email);
-        return true;
-      });
-      return [...toAdd, ...prev];
-    });
-  }
 
   const [featureStudio, setFeatureStudio] = useState<"smartFill" | "tracker" | "planner" | "activity" | "sending" | "nightMode" | null>(null);
   const [featureStudioFilter, setFeatureStudioFilter] = useState<{ campaign?: string; activity?: string; runId?: string }>({});
@@ -874,8 +894,6 @@ function Workspace() {
 
   const [confirming, setConfirming] = useState<
     | { kind: "profile"; id: string; email: string }
-    | { kind: "duplicate" | "risky"; count: number }
-    | { kind: "cleanup"; duplicate: number; risky: number }
     | { kind: "erase" }
     | {
         kind: "setting";
@@ -885,7 +903,6 @@ function Workspace() {
       }
     | null
   >(null);
-  const [cleanupHandled, setCleanupHandled] = useState(false);
   const [eraseRequest, setEraseRequest] = useState<{ status: "countdown"; requested_at: string; expires_at: string } | null>(null);
   const [eraseStatusChecked, setEraseStatusChecked] = useState(false);
   const [eraseNow, setEraseNow] = useState(Date.now());
@@ -1023,19 +1040,7 @@ function Workspace() {
     setPanel((p) => (p === "menu" ? "none" : "menu"));
   }
 
-  function switchMode(next: "standard" | "elite") {
-    if (next === mode || phase !== "idle") return;
-    if (next === "elite" && entitlements && !entitlements.premium && !entitlements.trialActive && !entitlements.communityPromo) {
-      askUpgrade("Your 10-day Elite Engine free trial has ended. Subscribe to keep using Elite Engine.");
-      return;
-    }
-    setPhase("out");
-    window.setTimeout(() => {
-      setMode(next);
-      setPhase("in");
-      window.setTimeout(() => setPhase("idle"), 520);
-    }, 460);
-  }
+
 
   function statusOf(p: GmailProfile): "ACTIVE" | "STANDBY" | "EXHAUSTED" {
     if (p.exhausted) return "EXHAUSTED";
@@ -1135,7 +1140,7 @@ function Workspace() {
       }
       if (cancelled) return;
       if (snapshot) {
-        if (snapshot.mode) setMode(snapshot.mode);
+        
         if (typeof snapshot.raw === 'string') setRaw(snapshot.raw);
         if (snapshot.recipients) setRecipients(snapshot.recipients.map((r) => ((r.status as string) === 'invalid' ? { ...r, status: 'risky' as const } : r)));
         if (typeof snapshot.validated === 'boolean') setValidated(snapshot.validated);
@@ -1172,7 +1177,6 @@ function Workspace() {
         if (snapshot.notes?.length) setNotes(snapshot.notes);
         if (snapshot.smartFillHistory) setSmartFillHistory(snapshot.smartFillHistory);
         if (snapshot.activeProfileId) setActiveProfileId(snapshot.activeProfileId);
-        if (typeof snapshot.cleanupHandled === 'boolean') setCleanupHandled(snapshot.cleanupHandled);
       }
       setReady(true);
     };
@@ -1238,7 +1242,7 @@ function Workspace() {
     if (!ready || !uid) return;
     const snapshot: WorkspaceSnapshot = {
       v: 1,
-      mode: mode === "elite" ? "elite" : "standard",
+      mode: "elite",
       raw,
       recipients,
       validated,
@@ -1259,7 +1263,6 @@ function Workspace() {
       notes,
       smartFillHistory,
       activeProfileId,
-      cleanupHandled,
     sentRecipientEmails,
     campaignHistory,
     campaignRuns,
@@ -1310,7 +1313,6 @@ function Workspace() {
     notes,
     smartFillHistory,
     activeProfileId,
-    cleanupHandled,
     sentRecipientEmails,
   campaignHistory,
     campaignRuns,
@@ -1487,9 +1489,9 @@ function Workspace() {
     duplicate: recipients.filter((r) => r.status === "duplicate").length,
     risky: recipients.filter((r) => r.status === "risky").length,
   };
-  const sentCount = generated.filter((g) => g.sent).length;
+  const sentCount = activeServerCampaignId ? serverCampaignCounts.sent : generated.filter((g) => g.sent).length;
   // Pending/Queued cover the whole current dataset — nothing is dropped unless the user removes it.
-  const pending = validated ? Math.max(generated.length - sentCount, 0) : 0;
+  const pending = activeServerCampaignId ? Math.max(serverCampaignCounts.total - serverCampaignCounts.sent - serverCampaignCounts.failed, 0) : validated ? Math.max(generated.length - sentCount, 0) : 0;
 
   function buildGenerated(list: Recipient[]) {
     const hasA = Boolean(tplA.subject.trim() && tplA.body.trim());
@@ -1525,15 +1527,10 @@ function Workspace() {
     const sourceText = raw.trim() || rexImportRawRef.current.trim();
     const parsed = sourceText ? parseRecipientFileText(sourceText) : recipients;
     const scanned = await enrichWithDomainScan(parsed);
-    const duplicates = scanned.filter((recipient) => recipient.status === "duplicate");
-    const list = scanned.filter((recipient) => recipient.status !== "duplicate");
-    if (duplicates.length) {
-      archiveToVault(duplicates);
-      toast.info(`${duplicates.length} duplicate row(s) were moved to Quarantine Vault and excluded from sending.`);
-    }
+    const list = scanned;
     if (list.length === 0) {
-      toast.error(duplicates.length ? "No unique recipients remain. Duplicate addresses are safely stored in Quarantine Vault." : "No usable recipient addresses were found. Check the list and try again.");
-      return { ok: false, valid: 0, risky: 0, duplicate: duplicates.length };
+      toast.error("No valid email addresses were found. Check the list and try again.");
+      return { ok: false, valid: 0, risky: 0, duplicate: 0 };
     }
   const alreadySent = new Set([
     ...generated.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase()),
@@ -1543,7 +1540,7 @@ function Workspace() {
     setValidated(list.length > 0);
     setEditing(false);
     setTab("valid");
-    // Only unique recipients stay in the execution dataset; duplicates are quarantined above.
+    // The parser already returns only syntactically valid, unique email addresses.
     const nextGenerated = buildGenerated(list).map((g) => ({ ...g, sent: alreadySent.has(g.email) }));
     setGenerated(nextGenerated);
     setGenTab("all");
@@ -1558,10 +1555,9 @@ function Workspace() {
     const done = nextGenerated.filter((g) => g.sent).length;
     toast.info(`${done} already got this exact message — skipping them. Continuing from #${firstPending}. Change subject/body to message them again.`);
   }
-    setCleanupHandled(false);
     rememberSmartFillSet(list);
-    toast.success(`Validation completed: ${list.filter(r => r.status === "valid").length} valid, ${list.filter(r => r.status === "risky").length} risky, ${duplicates.length} duplicate(s) quarantined and excluded.`);
-    return { ok: true, valid: list.filter(r => r.status === "valid").length, risky: list.filter(r => r.status === "risky").length, duplicate: duplicates.length };
+    toast.success(`Validation completed: ${list.length} unique addresses ready for the server queue.`);
+    return { ok: true, valid: list.length, risky: list.filter(r => r.status === "risky").length, duplicate: 0 };
   }
 
   /** Smart Fill History keeps only the latest 3 genuine sets the user supplied. */
@@ -1637,7 +1633,6 @@ function Workspace() {
       localStorage.removeItem("ec-engine-resume");
     } catch {}
     setNextInSec(null);
-    setCleanupHandled(false);
     // Clear client-side send locks so a new campaign (new body/subject) can run.
     // Server Permanent Send Protection still blocks the EXACT same message only.
     sentRecipientEmailsRef.current = new Set();
@@ -1732,7 +1727,6 @@ function Workspace() {
       resetWorkspace();
       setPlanner([]);
       setSmartFillHistory([]);
-      setQuarantineVault([]);
       setNotes([]);
       setScope(50);
       setDefaultScope(50);
@@ -1744,7 +1738,6 @@ function Workspace() {
       try {
         localStorage.removeItem("ec.workspace.v2");
         localStorage.removeItem("ec.settings.v1");
-        localStorage.removeItem("ec.quarantine-vault");
         localStorage.removeItem("ec.magic.pos.v2");
         localStorage.removeItem("ec.dyk.dismissed.v1");
         localStorage.removeItem("ec.dyk.lastShown.v1");
@@ -1769,91 +1762,6 @@ function Workspace() {
     }
   }
 
-  /** Only ever runs after the user explicitly chose to remove these groups. */
-  function removeStatuses(kinds: Recipient["status"][]) {
-    const seenEmails = new Set<string>();
-    const dropDupes = kinds.includes("duplicate");
-    const removed = recipients.filter((r) => kinds.includes(r.status));
-    archiveToVault(removed);
-    const keep = recipients.filter((r) => {
-      if (kinds.includes(r.status)) return false;
-      const key = r.email.trim().toLowerCase();
-      // Removing duplicates removes every repeat of an address, not just the label.
-      if (dropDupes && seenEmails.has(key)) return false;
-      seenEmails.add(key);
-      return true;
-    });
-    const sent = new Set(generated.filter((g) => g.sent).map((g) => g.email.toLowerCase()));
-    const nextGenerated = buildGenerated(keep).map((g) => ({ ...g, sent: sent.has(g.email.toLowerCase()) }));
-    setRecipients(keep);
-    setGenerated(nextGenerated);
-    // The send engine reads this ref — update it now so a campaign started in the
-    // same click can never pick up a removed address.
-    generatedRef.current = nextGenerated;
-    setTo((t) => Math.min(t, Math.max(keep.length, 1)));
-  }
-
-  function sendRiskyViaStandard() {
-  const riskyRecipients = recipients.filter((r) => r.status === "risky");
-  if (riskyRecipients.length === 0) {
-    toast.info("No risky recipients to send.");
-    return;
-  }
-  // Switch to Standard Mode (Mailto) so Elite Gmail accounts are completely protected
-  switchMode("standard");
-  setRecipients(riskyRecipients);
-  const nextGen = buildGenerated(riskyRecipients);
-  setGenerated(nextGen);
-  generatedRef.current = nextGen;
-  setFrom(1);
-  setTo(riskyRecipients.length);
-  setTab("risky");
-  setCleanupHandled(true);
-  setConfirming(null);
-  log(`Queued ${riskyRecipients.length} risky recipients in Standard Mode (Mailto) — protects Elite Gmail reputation`);
-  toast.success("Switched to Standard Mode", {
-    description: `Loaded ${riskyRecipients.length} risky address(es) for safe manual sending without risking connected Gmail accounts.`,
-  });
-}
-
-function removeCategory(kind: "duplicate" | "risky") {
-    removeStatuses([kind]);
-    setConfirming(null);
-    setTab("valid");
-    log(`Removed all ${kind} recipients from the list`);
-  }
-
-  function openMail(g: Generated) {
-    if (g.sent) return;
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("You're offline — reconnect to send.");
-      return;
-    }
-    const url = `googlegmail://co?to=${encodeURIComponent(g.email)}&subject=${encodeURIComponent(
-      g.subject,
-    )}&body=${encodeURIComponent(g.body)}`;
-    window.location.href = url;
-    toast.info("Opening Gmail", { description: "Your phone may ask permission to open the Gmail app." });
-    setGenerated((prev) => prev.map((x) => (x.id === g.id ? { ...x, sent: true } : x)));
-    void countStandardSend();
-  }
-
-  /** Records one Standard Mode send on the Master account (24HR + allowance). */
-  async function countStandardSend(): Promise<boolean> {
-    try {
-      const r = await recordStandardSend();
-      if (!r.ok) {
-        setPremiumReason("Your plan's sending allowance is used up. Upgrade to keep sending.");
-        return false;
-      }
-      setEntitlements((e) => (e ? { ...e, sent24h: e.sent24h + 1, used: e.used + 1 } : e));
-      return true;
-    } catch (error) {
-      console.error(error);
-      return true;
-    }
-  }
-
   /* live mirror of the queue so the scheduler never mutates state inside an updater */
   const generatedRef = useRef<Generated[]>([]);
   const rexImportRawRef = useRef<string>("");
@@ -1861,280 +1769,12 @@ function removeCategory(kind: "duplicate" | "risky") {
     generatedRef.current = generated;
   }, [generated]);
   const activeRef = useRef<string | null>(null);
-  /** one send at a time, and recipients already handed to Gmail this session */
-  const sendLockRef = useRef(false);
-  const claimedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     activeRef.current = activeProfileId;
   }, [activeProfileId]);
 
   const usableProfiles = profiles.filter((p) => !p.exhausted);
   const canSendElite = usableProfiles.length > 0;
-
-  /* Auto-Scout — Standard mode only. Opens real mail-app links on true wall-clock delay. */
-  useEffect(() => {
-    if (!scout || mode !== "standard" || engine !== "sending") return;
-    let cancelled = false;
-    let timer = 0;
-
-    const step = () => {
-      if (cancelled) return;
-      const next = generatedRef.current.find((g) => !g.sent && g.id >= from && g.id <= to);
-      if (!next) {
-        setScout(false);
-        setEngine("idle");
-        finishCampaignRun("completed");
-        // After Elite finishes the safe list, offer Standard Mode only if Vault still has leads
-        try {
-          const vaultLen = (typeof quarantineVault !== "undefined" && Array.isArray(quarantineVault))
-            ? quarantineVault.length
-            : 0;
-          if (vaultLen > 0 && (mode as string) === "elite") {
-            toast.message(`Elite finished. ${vaultLen} lead(s) remain in Quarantine Vault.`, {
-              action: {
-                label: "Send via Standard",
-                onClick: () => {
-                  if (typeof sendRiskyViaStandard === "function") sendRiskyViaStandard();
-                },
-              },
-              duration: 12000,
-            });
-          }
-        } catch {}
-        return;
-      }
-      const url = `googlegmail://co?to=${encodeURIComponent(next.email)}&subject=${encodeURIComponent(
-        next.subject,
-      )}&body=${encodeURIComponent(next.body)}`;
-      window.location.href = url;
-      recordCampaignRecipient(next.email, "handed_off", "Gmail compose was opened; delivery is not confirmed.", next.name);
-      setGenerated((prev) => prev.map((x) => (x.id === next.id ? { ...x, sent: true } : x)));
-      void countStandardSend().then((ok) => {
-        if (!ok) {
-          cancelled = true;
-          setScout(false);
-          setEngine("idle");
-          finishCampaignRun("failed");
-        }
-      });
-      last = performance.now();
-      wait();
-    };
-    // Timing comes from real elapsed time and always uses the latest delay.
-    let last = performance.now();
-    const wait = () => {
-      if (cancelled) return;
-      const due = last + delayRef.current * 1000 - performance.now();
-      if (due <= 0) step();
-      else timer = window.setTimeout(wait, Math.min(due, 200));
-    };
-    wait();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [scout, from, to, mode, engine]);
-
-  /* Elite Engine — real Gmail sending. Nothing counts unless Gmail confirms it. */
-  useEffect(() => {
-    if (mode !== "elite") return;
-    if (engine !== "sending" || !scout) return;
-
-    let cancelled = false;
-    let timer = 0;
-
-    const stop = (msg?: string) => {
-      setEngine("idle");
-      setScout(false);
-      if (msg) {
-        const finished = /finished|complete/i.test(msg);
-        finishCampaignRun(finished ? "completed" : /paused/i.test(msg) ? "paused" : "failed");
-        log(msg, finished ? "campaignCompleted" : "campaignPaused");
-      }
-    };
-
-    let startedAt = performance.now();
-    const step = async () => {
-      if (cancelled) return;
-      // Single-flight: only one send may ever be in progress, across effect re-runs.
-      if (sendLockRef.current) {
-        timer = window.setTimeout(() => void step(), 150);
-        return;
-      }
-      const done = new Set(
-        generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase()),
-      );
-      for (const e of sentRecipientEmailsRef.current) done.add(e);
-      for (const e of claimedRef.current) done.add(e);
-      const riskySet = new Set(
-        recipients.filter((r) => r.status === "risky").map((r) => r.email.trim().toLowerCase())
-      );
-      const next = generatedRef.current.find(
-        (g) => !g.sent && g.id >= from && g.id <= to && !done.has(g.email.trim().toLowerCase()) && !riskySet.has(g.email.trim().toLowerCase()),
-      );
-      if (!next) {
-        stop("Campaign finished — no pending recipients left in range");
-        return;
-      }
-      const key = next.email.trim().toLowerCase();
-      sendLockRef.current = true;
-      claimedRef.current.add(key);
-
-// Elite sends through Gmail, so the 3-second minimum gives Gmail response time
-  // room without pretending that a 1-second setting is a true wall-clock pace.
-      // Wall-clock pace: delay is measured from THIS send's start so Gmail RTT
-      // counts toward the selected seconds (3s feels ~3s, not 3s + API).
-      const sendStart = performance.now();
-      // Anchor the live finish estimate to this recipient's actual send start.
-      setNextInSec(delayRef.current);
-      let result: Awaited<ReturnType<typeof sendGmailMessage>>;
-      try {
-        result = await sendGmailMessage({
-          data: {
-            to: next.email,
-            subject: next.subject,
-            body: next.body,
-  profileId: activeRef.current,
-  permanentSendProtection,
-  },
-        });
-      } catch (error) {
-        console.error(error);
-        // Unknown outcome: keep the address locked so it is never sent twice.
-        sendLockRef.current = false;
-        if (!cancelled) {
-          setOffline(true);
-          setEngine("paused"); try { localStorage.removeItem("ec-engine-resume"); } catch {};
-          setScout(false);
-          const message = "Campaign paused — the connection dropped. Your queue is safe; resume when ready.";
-          log(message);
-          toast.error(message);
-        }
-        return;
-      }
-      sendLockRef.current = false;
-
-      if (result.ok) {
-        // Play the selected sending swoosh only after Gmail confirms delivery.
-        // The campaign-start tap unlocks Web Audio before asynchronous sending begins.
-        if (settings.sounds && settings.sendingSound) {
-          playSendSound(settings.sendingSoundVariant, true);
-        }
-        // Record the confirmed send even if the effect was re-run meanwhile,
-        // so the same recipient can never be picked again.
-        const mark = (list: Generated[]) =>
-          list.map((x) => (x.email.trim().toLowerCase() === key ? { ...x, sent: true } : x));
-        generatedRef.current = mark(generatedRef.current);
-        setGenerated(mark);
-        sentRecipientEmailsRef.current.add(key);
-        setSentRecipientEmails((previous) =>
-          previous.includes(key) ? previous : [...previous, key],
-        );
-        const today = new Date().toISOString().slice(0, 10);
-        setCampaignHistory((previous) => {
-          const existing = previous.find((day) => day.date === today);
-          if (existing) return previous.map((day) => day.date === today ? { ...day, sent: day.sent + 1 } : day);
-          return [{ date: today, sent: 1 }, ...previous].slice(0, 5);
-        });
-        setEntitlements((e) => (e ? { ...e, sent24h: e.sent24h + 1, used: e.used + 1 } : e));
-      } else {
-        claimedRef.current.delete(key);
-      }
-      if (cancelled) return;
-
-      applyProfiles(result.profiles);
-
-      if (result.ok) {
-        recordCampaignRecipient(next.email, "sent", undefined, next.name);
-        if (result.rotated) {
-          setActiveProfileId(result.profileId);
-          activeRef.current = result.profileId;
-          log(`Rotated to ${result.email} — the previous profile reached its limit. Sent total continues.`);
-        }
-        // Keep cycle clock from sendStart so remaining wait = delay - API time
-        startedAt = sendStart;
-        waitThen();
-        return;
-      }
-
-      if (result.reason === "already_sent") {
-        recordCampaignRecipient(next.email, "skipped", "The server confirmed this exact message was already delivered.", next.name);
-        const mark = (list: Generated[]) =>
-          list.map((x) => (x.email.trim().toLowerCase() === key ? { ...x, sent: true } : x));
-        generatedRef.current = mark(generatedRef.current);
-        setGenerated(mark);
-        log(`Skipped ${next.email} — same message already delivered to this address. It cannot send again unless you change the subject or body.`);
-        startedAt = performance.now();
-        waitThen();
-        return;
-      }
-
-
-      recordCampaignRecipient(next.email, "failed", result.message ?? result.reason ?? "Gmail could not complete this recipient.", next.name);
-      if (result.reason === "trial_expired") {
-        stop("Elite Engine free trial has ended — campaign stopped");
-        askUpgrade("Your 10-day Elite Engine free trial has ended. Subscribe to keep using Elite Engine.");
-        void refreshEntitlements();
-        return;
-      }
-      if (result.reason === "allowance_exhausted") {
-        const message = "Sending allowance used up for this plan — campaign stopped. Check your plan or upgrade to continue.";
-        stop(message);
-        toast.error(message);
-        setPremiumReason("Your plan's sending allowance is used up. Upgrade to keep sending.");
-        void refreshEntitlements();
-        return;
-      }
-      if (result.reason === "all_exhausted") {
-        const message = "Campaign paused — every connected Gmail profile has reached its daily limit. Connect another profile or resume after the limit resets.";
-        stop(message);
-        toast.error(message);
-        return;
-      }
-      if (result.reason === "reconnect") {
-        if (result.profileId) setNeedsReconnect((m) => ({ ...m, [result.profileId as string]: true }));
-        const message = "Campaign stopped — Gmail access expired for a connected profile. Reconnect it to continue.";
-        setConnectNote("Google access for that profile expired. Reconnect it to continue.");
-        stop(message);
-        toast.error(message);
-        return;
-      }
-      if (result.reason === "no_profiles") {
-        const message = "Campaign stopped — no connected Gmail profile is available. Connect Gmail before starting again.";
-        stop(message);
-        toast.error(message);
-        return;
-      }
-      const message = `Campaign stopped — ${result.message ?? "Gmail rejected the send"}`;
-      stop(message);
-      toast.error(message);
-    };
-
-    // Real wall-clock delay: sends start exactly `delay` seconds apart, measured
-    // from the start of the previous send, so Gmail's own response time is not
-    // added on top. Always uses the current selection.
-    const waitThen = () => {
-      if (cancelled) return;
-      const tick = () => {
-        if (cancelled) return;
-        const due = startedAt + delayRef.current * 1000 - performance.now();
-        if (due <= 0) {
-          setNextInSec(0);
-          void step();
-        } else {
-          setNextInSec(Math.max(0, Math.ceil(due / 1000)));
-          timer = window.setTimeout(tick, Math.min(due, 100));
-        }
-      };
-      tick();
-    };
-    void step();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, scout, mode, from, to]);
 
   function importRecipientsIntoWorkspace(rawFile: string, sourceName = "Imported list"): boolean {
     if (engine === "sending" || engine === "paused") {
@@ -2158,7 +1798,6 @@ function removeCategory(kind: "duplicate" | "risky") {
     setTab("valid");
     setFrom(1);
     setTo(imported.length);
-    setCleanupHandled(false);
     log(`${imported.length.toLocaleString()} recipients imported into the active workspace from ${sourceName}. Validate the list before executing a campaign.`);
     toast.success(`${imported.length.toLocaleString()} recipients loaded into the workspace. Validate the list before sending.`);
     return true;
@@ -2185,7 +1824,6 @@ function removeCategory(kind: "duplicate" | "risky") {
       setEditing(false);
       setTab("valid");
       setGenTab("all");
-      setCleanupHandled(false);
       rememberSmartFillSet(sourceRecipients);
     }
     // Rebuild from the live template editor state every time. Never reuse stale
@@ -2257,260 +1895,84 @@ function removeCategory(kind: "duplicate" | "risky") {
     if (!keepActive) activeCampaignIdRef.current = null;
   }
 
-  // Backgrounding the app is an automatic pause, not a cancellation. Keep a
-  // per-account resume marker and restart from the last confirmed recipient
-  // when the user returns. An explicit Pause or Logout clears that marker.
-  useEffect(() => {
-    if (!ready || !signedIn || !uid) return;
-    const key = campaignResumeKey(uid);
-    const erasureDecisionIsDue = () =>
-      Boolean(eraseRequest && new Date(eraseRequest.expires_at).getTime() <= Date.now());
-    const pauseForBackground = () => {
-      if (engineRef.current !== "sending") return;
-      try { localStorage.setItem(key, "1"); } catch {}
-      setEngine("paused");
-      setScout(false);
-      finishCampaignRun("paused", true);
-      log("Campaign automatically paused while Elite Connectere is in the background. It will resume when you return.", "campaignPaused");
-    };
-    const resumeOnReturn = () => {
-      if (erasureDecisionIsDue()) {
-        try { localStorage.removeItem(key); localStorage.removeItem("ec-engine-resume"); } catch {}
-        setAutoResumePending(false);
-        return;
-      }
-      if (document.visibilityState === "hidden" || !navigator.onLine) return;
-      try {
-        if (localStorage.getItem(key) !== "1") return;
-      } catch { return; }
-      if (engineRef.current !== "paused") return;
-      if (mode === "elite" && (!canSendElite || offline)) return;
-      setCampaignRuns((previous) => previous.map((run) => {
-        if (run.id !== activeCampaignIdRef.current || run.status !== "paused") return run;
-        const resumed = { ...run, status: "running" as const };
-        delete resumed.finishedAt;
-        return resumed;
-      }));
-      setEngine("sending");
-      setScout(true);
-      log("Campaign automatically resumed from the last confirmed recipient.", "campaignStarted");
-    };
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") pauseForBackground();
-      else resumeOnReturn();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", pauseForBackground);
-    window.addEventListener("pageshow", resumeOnReturn);
-    window.addEventListener("focus", resumeOnReturn);
-    window.addEventListener("online", resumeOnReturn);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", pauseForBackground);
-      window.removeEventListener("pageshow", resumeOnReturn);
-      window.removeEventListener("focus", resumeOnReturn);
-      window.removeEventListener("online", resumeOnReturn);
-    };
-  }, [ready, signedIn, uid, mode, canSendElite, offline, eraseRequest?.expires_at]);
-
-  // A full page reload destroys the running React state. Rehydrate the saved
-  // execution ledger first, then resume only when the authenticated workspace
-  // is ready and the device is back online/visible.
-  useEffect(() => {
-    if (!autoResumePending || !eraseStatusChecked || !ready || !signedIn || !uid) return;
-    const key = campaignResumeKey(uid);
-    if (eraseRequest && new Date(eraseRequest.expires_at).getTime() <= Date.now()) {
-      setAutoResumePending(false);
-      try {
-        localStorage.removeItem(key);
-        localStorage.removeItem("ec-engine-resume");
-      } catch {}
-      return;
-    }
-    const attemptResume = () => {
-      if (document.visibilityState === "hidden" || !navigator.onLine) return;
-      if (mode === "elite" && (!canSendElite || offline)) return;
-      try { if (localStorage.getItem(key) !== "1") return; } catch { return; }
-      setAutoResumePending(false);
-      setCampaignRuns((previous) => previous.map((run) => {
-        if (run.id !== activeCampaignIdRef.current || run.status !== "paused") return run;
-        const resumed = { ...run, status: "running" as const };
-        delete resumed.finishedAt;
-        return resumed;
-      }));
-      setEngine("sending");
-      setScout(true);
-      log("Campaign restored and automatically resumed from its last confirmed recipient.", "campaignStarted");
-    };
-    attemptResume();
-    document.addEventListener("visibilitychange", attemptResume);
-    window.addEventListener("pageshow", attemptResume);
-    window.addEventListener("online", attemptResume);
-    return () => {
-      document.removeEventListener("visibilitychange", attemptResume);
-      window.removeEventListener("pageshow", attemptResume);
-      window.removeEventListener("online", attemptResume);
-    };
-  }, [autoResumePending, eraseStatusChecked, eraseRequest?.expires_at, ready, signedIn, uid, mode, canSendElite, offline]);
-
-  async function startCampaign(skipPace = false): Promise<boolean> {
-    // Prime Web Audio synchronously in the Execute/Approve tap, before any async work.
+  async function startCampaign(): Promise<boolean> {
     unlockAudioFromGesture();
-    if (engine === "sending") {
-      toast.info("Elite Engine is already running; no second campaign was started.");
-      return false;
-    }
-    if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
-      setOneSecAsk(true);
-      return false;
-    }
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("You're offline — reconnect to start a campaign.");
-      return false;
-    }
-    if (mode === "elite" && !canSendElite) {
-      guideTo(
-        "profiles",
-        profiles.length === 0
-          ? "Connect a Google profile — Elite Engine sends from your own Gmail."
-          : "Every connected profile has reached its limit. Connect another to continue.",
-      );
-      return false;
-    }
-    if (!validated || generated.length === 0) {
-      guideTo("recipients", "Validate your list first — that is what builds the campaign.");
-      return false;
-    }
-    if (!cleanupHandled && (counts.duplicate > 0 || counts.risky > 0)) {
-      // Auto-quarantine bad rows and start Elite on safe contacts — no popup at send start
-      removeStatuses(["duplicate", "risky"]);
-      setCleanupHandled(true);
-      if (counts.risky > 0 || counts.duplicate > 0) {
-        toast.info(
-          `Saved ${counts.risky + counts.duplicate} risky/duplicate lead(s) to Vault. Sending safe contacts on Elite…`
-        );
-      }
-    }
-
-    // Clear reasons when campaign cannot start
-    // Only the current generated list "sent" flags block a continue.
-    // Lifetime history is for stats — Reset clears it. Server still dedupes exact same message.
-    const doneEmails = new Set(
-      generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase())
-    );
-    const inRange = generated.filter((g) => g.id >= from && g.id <= to);
-    if (inRange.length === 0) {
-      toast.error("No recipients found in selected range.");
-      return false;
-    }
-    const unsentInRange = inRange.filter((g) => !doneEmails.has(g.email.trim().toLowerCase()));
-    if (unsentInRange.length === 0) {
-      toast.info("This run already finished every row in the range. Tap Reset, rebuild the list, then Execute for a new campaign.");
-      showErrorGuide({
-        title: "This run is finished",
-        body: "Every address in this range was already marked sent in the current list. Reset clears those marks so you can start a new campaign (new message is allowed; the server still blocks the exact same message only).",
-        steps: [
-          "Tap Reset (clears Sent marks and the old lock list).",
-          "Paste or load your list again if the list was cleared.",
-          "Update subject/body if this is a new outreach.",
-          "Tap Execute Campaign.",
-        ],
-      });
-      return false;
-    }
-
-    
-    // Elite content safety — block clear phishing / bank-fraud copy before Engine sends
-    {
-      const subj = (tplA?.subject || tplB?.subject || "").toString();
-      const body = (tplA?.body || tplB?.body || "").toString();
-      const hit = scanCampaignContent(subj, body);
-      if (hit.blocked) {
-        toast.error(safetyBlockMessage(hit));
-        log(safetyBlockMessage(hit), "campaignPaused");
-        return false;
-      }
-    }
-
-    // Create an execution ledger only after readiness and safety checks pass.
-    const riskyEmails = new Set(recipients.filter(r => r.status === "risky").map(r => r.email.trim().toLowerCase()));
-    const runId = crypto.randomUUID();
-    const runStartedAt = new Date().toISOString();
-    const initialSkipped: CampaignRecipientResult[] = inRange
-      .filter(g => doneEmails.has(g.email.trim().toLowerCase()) || riskyEmails.has(g.email.trim().toLowerCase()))
-      .map(g => ({ email: g.email, ...(g.name ? { name: g.name } : {}), status: "skipped" as const,
-        reason: doneEmails.has(g.email.trim().toLowerCase()) ? "Already marked sent in this workspace." : "Recipient is quarantined as risky.", at: runStartedAt }));
-    if (activeCampaignIdRef.current) {
-      const resumeId = activeCampaignIdRef.current;
-      setCampaignRuns(previous => previous.map(run => {
-        if (run.id !== resumeId) return run;
-        const nextRun = { ...run, status: "running" as const };
-        delete nextRun.finishedAt;
-        return nextRun;
-      }));
-    } else {
-      activeCampaignIdRef.current = runId;
-      setCampaignRuns(previous => [{ id: runId, startedAt: runStartedAt, mode: mode === "elite" ? ("elite" as const) : ("standard" as const), status: "running" as const,
-        targetCount: inRange.length, sentCount: 0, skippedCount: initialSkipped.length, failedCount: 0,
-        handedOffCount: 0, recipients: initialSkipped }, ...previous].slice(0, 5));
-    }
-
-    // Manual execution stays in Elite Engine. Rex approval is only for campaigns explicitly prepared in Rex.
-    setAutoResumePending(false);
-    setEngine("sending");
+    if (!uid) { toast.error("Sign in before starting a campaign."); return false; }
+    if (engine === "sending") { toast.info("This campaign is already running on the server."); return false; }
+    if (!navigator.onLine) { toast.error("Reconnect to create or control the server campaign."); return false; }
+    if (campaignQueueLockRef.current) { toast.info("Your campaign request is already being saved."); return false; }
+    campaignQueueLockRef.current = true;
     try {
-      if (uid) localStorage.setItem(campaignResumeKey(uid), "1");
-      localStorage.removeItem("ec-engine-resume");
-    } catch {}
-    setScout(true);
-    log("Campaign started — Elite Engine is now sending.", "campaignStarted");
-    return true;
-  }
-
-  // each new campaign asks again about the 1-second pace
-  useEffect(() => {
-    if (engine !== "sending" && engine !== "paused") oneSecOkRef.current = false;
-  }, [engine]);
-
-  function pauseCampaign(): boolean {
-    if (engine !== "sending") return false;
-    setAutoResumePending(false);
-    if (uid) { try { localStorage.removeItem(campaignResumeKey(uid)); } catch {} }
-    setEngine("paused");
-    setScout(false);
-    finishCampaignRun("paused", true);
-    log("Campaign paused", "campaignPaused");
-    return true;
-  }
-
-  // When the 30-minute Erase Data countdown expires, stop any live sending
-  // and prevent a background/reload auto-resume until the owner chooses YES or NO.
-  useEffect(() => {
-    if (!eraseRequest || new Date(eraseRequest.expires_at).getTime() > eraseNow || engine !== "sending") return;
-    setAutoResumePending(false);
-    if (uid) {
-      try { localStorage.removeItem(campaignResumeKey(uid)); } catch {}
+      if (activeServerCampaignId && engine === "paused") {
+        await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "resume" } });
+        setEngine("sending"); setScout(true); setServerCampaignStatus("queued");
+        toast.success("Campaign resumed on the server.");
+        return true;
+      }
+      if (!validated || generated.length === 0) { guideTo("recipients", "Validate your list first — this builds the server campaign."); return false; }
+      if (!canSendElite) { guideTo("profiles", "Connect a Google account with Gmail send permission before executing."); return false; }
+      const inRange = generated.filter((row) => row.id >= from && row.id <= to);
+      // Domain-flagged risky addresses remain visible for review but are never sent.
+      const sendableEmails = new Set(valid.map((recipient) => recipient.email.trim().toLowerCase()));
+      const seen = new Set<string>();
+      const recipientsForQueue = inRange.flatMap((row) => {
+        const email = row.email.trim().toLowerCase();
+        if (!sendableEmails.has(email) || !/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(email) || seen.has(email)) return [];
+        if (!row.subject.trim() || !row.body.trim()) return [];
+        seen.add(email);
+        return [{ email, name: row.name, subject: row.subject, body: row.body }];
+      });
+      if (recipientsForQueue.length === 0) { toast.error("No unique, valid recipients with a complete subject and message remain in the selected range."); return false; }
+      const baseSubject = tplA.subject.trim() || tplB.subject.trim() || recipientsForQueue[0]!.subject;
+      const baseBody = tplA.body.trim() || tplB.body.trim() || recipientsForQueue[0]!.body;
+      const queued = await enqueueCampaign({ data: {
+        name: baseSubject.slice(0, 120) || "Campaign", subject: baseSubject, body: baseBody,
+        delaySeconds: Math.min(8, Math.max(3, delay)), recipients: recipientsForQueue,
+      } });
+      setActiveServerCampaignId(queued.campaignId);
+      setServerCampaignStatus(queued.status);
+      setEngine(queued.status === "paused" ? "paused" : "sending");
+      setScout(queued.status !== "paused");
+      setNextInSec(delay);
+      log("Campaign saved to Supabase: " + recipientsForQueue.length + " unique recipients. The server worker now owns delivery.", "campaignStarted");
+      toast.success("Campaign queued — server delivery continues independently of this tab.", {
+        description: queued.dispatch?.dispatched ? "The worker was kicked immediately." : "The persistent worker will pick it up on its next poll.",
+      });
+      return true;
+    } catch (error) {
+      console.error("Could not queue campaign", error);
+      toast.error(error instanceof Error ? error.message : "Campaign could not be added to the server queue.");
+      return false;
+    } finally {
+      campaignQueueLockRef.current = false;
     }
-    try { localStorage.removeItem("ec-engine-resume"); } catch {}
-    setEngine("paused");
-    setScout(false);
-    finishCampaignRun("paused", true);
-    log("Campaign paused because the Erase Data countdown reached its final decision.");
-  }, [eraseRequest?.expires_at, eraseNow, engine, uid, log, finishCampaignRun]);
-
-  function stopCampaign(): boolean {
-    if (engine !== "sending" && engine !== "paused") return false;
-    setAutoResumePending(false);
-    if (uid) { try { localStorage.removeItem(campaignResumeKey(uid)); } catch {} }
-    setEngine("idle");
-    setScout(false);
-    finishCampaignRun("stopped");
-    log("Campaign stopped — remaining unsent rows stay available.", "campaignPaused");
-    return true;
   }
 
+  async function pauseCampaign(): Promise<boolean> {
+    if (!activeServerCampaignId || engine !== "sending") return false;
+    try {
+      await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "pause" } });
+      setEngine("paused"); setScout(false); setServerCampaignStatus("paused");
+      log("Campaign paused in Supabase. Already-sent recipients remain recorded.", "campaignPaused");
+      toast.success("Campaign paused.");
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Campaign could not be paused."); return false; }
+  }
+
+  async function stopCampaign(): Promise<boolean> {
+    if (!activeServerCampaignId || (engine !== "sending" && engine !== "paused")) return false;
+    try {
+      await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "stop" } });
+      setEngine("idle"); setScout(false); setServerCampaignStatus("cancelled");
+      toast.success("Campaign stopped. Sent recipients remain recorded; unsent recipients were not sent.");
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Campaign could not be stopped."); return false; }
+  }
+  // "All" must include both delivered and not-yet-delivered recipients.
+  // Previously it used the same predicate as Pending, hiding every sent row
+  // while the tab counter still showed the full total.
   const shownGenerated = generated.filter((g) =>
-    genTab === "sent" ? g.sent : genTab === "pending" ? !g.sent : !g.sent,
+    genTab === "sent" ? g.sent : genTab === "pending" ? !g.sent : true,
   );
   const tabList = recipients.filter((r) => r.status === tab);
   const current = profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
@@ -2520,12 +1982,6 @@ function removeCategory(kind: "duplicate" | "risky") {
     .replace(/[^a-zA-ZÀ-ÿ'-]/g, "")
     .replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase());
 
-  const duplicatePress = useLongPress(() => {
-    if (counts.duplicate > 0) setConfirming({ kind: "duplicate", count: counts.duplicate });
-  }, 2000);
-  const riskyPress = useLongPress(() => {
-    if (counts.risky > 0) setConfirming({ kind: "risky", count: counts.risky });
-  }, 2000);
   const plannerPress = useLongPress(() => setPlannerEditing(null));
 
 
@@ -2586,8 +2042,7 @@ function removeCategory(kind: "duplicate" | "risky") {
               setRexPersonalDestinationId(null);
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
-              setStudioOpen(false);
+                    setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
               setTeamOpen(false);
@@ -2600,7 +2055,6 @@ function removeCategory(kind: "duplicate" | "risky") {
               setAssistOpen(false);
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
               setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
@@ -2627,8 +2081,7 @@ function removeCategory(kind: "duplicate" | "risky") {
               setAssistOpen(false);
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
-              setStudioOpen(false);
+                  setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
               setTeamOpen(false);
@@ -2665,7 +2118,6 @@ function removeCategory(kind: "duplicate" | "risky") {
 } else if (p === "workspace-menu" || p === "logout" || p === "export-data" || p === "reset-workspace" || p === "erase-data" || p === "clear-cache") {
               setFeatureStudio(null);
               setRadarOpen(false);
-              setVaultOpen(false);
               setStudioOpen(false);
               setChatOpen(false);
               setChatSettingsOpen(false);
@@ -2735,7 +2187,7 @@ function removeCategory(kind: "duplicate" | "risky") {
             } else if (p === "rex-monitor" || p === "campaign-monitor") {
               setRexStudioOpen(true);
               window.setTimeout(() => document.querySelector("[data-rex-monitor]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
-            } else if (p === "radar" || p === "vault" || p === "snippets" || p === "monitor") {
+            } else if (p === "radar" || p === "snippets" || p === "monitor") {
               setRadarTab(p);
               setRadarOpen(true); showPanelTip("radar");
             } else if (p === "settings") {
@@ -2779,9 +2231,7 @@ function removeCategory(kind: "duplicate" | "risky") {
               else askUpgrade("Night Mode and interface customization require Elite Studio ProMaxx.", true);
             } else if (p === "hotspot") {
               setTeamOpen(true);
-            } else if (p === "quarantine") {
-              setVaultOpen(true);
-            } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools") {
+                        } else if (p === "protection" || p === "notifications" || p === "subscription" || p === "scope" || p === "history" || p === "tools") {
               setMenuView(p === "protection" ? "campaignProtection" : p);
               setPanel("menu");
             } else if (p === "gmail-profiles") {
@@ -2891,22 +2341,10 @@ function removeCategory(kind: "duplicate" | "risky") {
                     <p className="label-caps px-3.5 py-2.5">Workspace menu</p>
                     <div className="divide-y divide-line border-t border-line">
                       <MenuToggle
-                        icon={Zap}
-                        label="Elite Engine mode"
-                        on={mode === "elite"}
-                        onClick={() => switchMode(mode === "elite" ? "standard" : "elite")}
-                      />
-                      <MenuToggle
                         icon={Shuffle}
                         label="2-Way rotation"
                         on={twoWay}
                         onClick={() => setTwoWay((v) => !v)}
-                      />
-                      <MenuRow
-                        icon={Database}
-                        label="Quarantine Vault"
-                        sub={`${quarantineVault.length} excluded/risky leads saved`}
-                        onClick={() => { setVaultOpen(true); setPanel("none"); }}
                       />
                       <MenuRow
                         icon={ScrollText}
@@ -3571,7 +3009,7 @@ function removeCategory(kind: "duplicate" | "risky") {
                       {entitlements && !premium && (
                         <>
                           <p className="text-[11.5px] leading-snug text-ink-soft">
-Sending delays start at 3 seconds to account for Gmail delivery time.
+                            Sending delays start at 3 seconds to account for Gmail delivery time.
                           </p>
                           {entitlements.promoActive && (
                             <Countdown endsAt={entitlements.promoEndsAt} />
@@ -3605,32 +3043,11 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
         <Card className="!py-2.5">
           <div className="animate-fade-in">
             <h2 className="text-[17px] font-bold leading-tight text-ink">
-              {mode === "standard" ? "Fast Mail Send" : "Elite Engine Workspace"}
+              Campaign Workspace
             </h2>
             <p className="mt-0.5 text-[12px] leading-snug text-ink-soft">
-              {mode === "standard"
-                ? "Compile personalised mailto batches straight into your device mail client."
-                : "Automated in-app delivery across your connected Google profiles."}
+              Campaigns run through the persistent server queue and connected Google accounts.
             </p>
-          </div>
-
-          <div className="mt-2 inline-flex rounded-full border border-line bg-soft p-0.5">
-            <button
-              onClick={() => switchMode("standard")}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-300 ${
-                mode === "standard" ? "bg-ink text-white" : "text-ink-soft"
-              }`}
-            >
-              <Send className="size-3.5" /> Standard
-            </button>
-            <button data-tour="engine"
-              onClick={() => switchMode("elite")}
-              className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-300 ${
-                mode === "elite" ? "bg-brand text-white" : "text-ink-soft"
-              }`}
-            >
-              <Zap className="size-3.5" /> Elite Engine
-            </button>
           </div>
 
           <div className="mt-2 grid grid-cols-3 gap-1.5">
@@ -3669,7 +3086,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
             </li>
             <li className="flex items-center gap-1.5">
               <MailCheck className="size-3" />
-              {mode === "standard" ? "Sends from your mail app" : "Internal engine delivery"}
+              Server queue delivery
             </li>
           </ul>
         </Card>
@@ -3758,42 +3175,20 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
 
           <div className="mt-2.5 animate-fade-in">
             <div className="flex items-center gap-1 rounded-full border border-line bg-soft p-0.5">
-              {(
-                [
-                  ["valid", counts.valid, ShieldCheck],
-                  ["duplicate", counts.duplicate, XCircle],
-                  ["risky", counts.risky, AlertTriangle],
-                ] as [Status, number, typeof ShieldCheck][]
-              ).map(([key, n, Icon]) => {
-                const press =
-                  key === "duplicate" ? duplicatePress : key === "risky" ? riskyPress : null;
-                return (
-                  <button
-                    key={key}
-                    onPointerDown={press?.onPointerDown}
-                    onPointerUp={press?.onPointerUp}
-                    onPointerLeave={press?.onPointerLeave}
-                    onPointerCancel={press?.onPointerCancel}
-                    onContextMenu={press?.onContextMenu}
-                    onClick={() => {
-                      if (press?.consumed()) return;
-                      setTab(key);
-                    }}
-                    className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${
-                      tab === key ? "bg-brand text-white" : "text-ink"
-                    }`}
-                  >
-                    <Icon className="size-3.5 shrink-0" /> {key}
-                    <span
-                      className={`rounded-full px-1 py-px text-[10px] ${
-                        tab === key ? "bg-white/20" : "bg-white"
-                      }`}
-                    >
-                      {n}
-                    </span>
-                  </button>
-                );
-              })}
+              <button
+                onClick={() => setTab("valid")}
+                className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${tab === "valid" ? "bg-brand text-white" : "text-ink"}`}
+              >
+                <ShieldCheck className="size-3.5 shrink-0" /> valid
+                <span className={`rounded-full px-1 py-px ${tab === "valid" ? "bg-white/20" : "bg-white"}`}>{counts.valid}</span>
+              </button>
+              <button
+                onClick={() => setTab("risky")}
+                className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${tab === "risky" ? "bg-brand text-white" : "text-ink"}`}
+              >
+                <AlertTriangle className="size-3.5 shrink-0" /> risky
+                <span className={`rounded-full px-1 py-px ${tab === "risky" ? "bg-white/20" : "bg-white"}`}>{counts.risky}</span>
+              </button>
             </div>
 
             <div className="mt-2 max-h-[168px] divide-y divide-line overflow-y-auto rounded-xl border border-line">
@@ -3819,40 +3214,8 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               )}
             </div>
             <p className="mt-1.5 text-[11px] leading-snug text-ink-soft">
-              Total {recipients.length.toLocaleString()} · Valid {counts.valid.toLocaleString()} · Duplicate{" "}
-              {counts.duplicate.toLocaleString()} · Risky {counts.risky.toLocaleString()} — nothing is removed
-              unless you choose to.
+              {recipients.length.toLocaleString()} unique addresses · {counts.valid.toLocaleString()} ready to send · {counts.risky.toLocaleString()} flagged as risky and excluded from execution.
             </p>
-            {(counts.duplicate > 0 || counts.risky > 0) && (
-              <p className="mt-1 text-[11px] leading-snug text-ink-soft">
-                Press and hold Duplicate or Risky to remove that whole group.
-              </p>
-            )}
-            {(counts.risky > 0 || quarantineVault.length > 0) && (
-              <div className="mt-2 flex items-center justify-between rounded-xl border border-brand/30 bg-brand-soft p-2.5 text-[11.5px] text-ink">
-                <span className="leading-tight">
-                  <strong>{counts.risky > 0 ? `${counts.risky} Risky` : `${quarantineVault.length} Quarantined`}</strong>: saved safely in Vault to protect your Gmail reputation.
-                </span>
-                <div className="flex gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setVaultOpen(true)}
-                    className="rounded-lg border border-brand/40 bg-white px-2 py-1 text-[11px] font-semibold text-ink hover:bg-brand-soft"
-                  >
-                    Open Vault
-                  </button>
-                  {counts.risky > 0 && (
-                    <button
-                      type="button"
-                      onClick={sendRiskyViaStandard}
-                      className="rounded-lg bg-brand px-2 py-1 text-[11px] font-semibold text-white hover:bg-brand"
-                    >
-                      Send Standard
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </Card>
 
@@ -4074,7 +3437,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               <Card className="animate-fade-in" tourId="execute">
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="flex items-center gap-1.5 text-[14px] font-semibold text-ink">
-                    <Zap className="size-4 text-brand" /> Execute Campaign In-App
+                    <Zap className="size-4 text-brand" /> Execute Campaign
                   </h2>
                   <span className="flex items-center gap-1.5 rounded-full border border-line bg-soft px-2.5 py-1 text-[10px] font-bold tracking-widest text-ink">
                     <span
@@ -4113,11 +3476,8 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                   </button>
                   <button
                     onClick={() => {
-                      if (engine === "sending") {
-                        setEngine("idle");
-                        setScout(false);
-                        finishCampaignRun("stopped");
-                        log("Campaign paused — remaining unsent rows stay ready. Tap Execute to continue, or Reset again to clear the workspace run.", "campaignPaused");
+                      if (engine === "sending" || engine === "paused") {
+                        void stopCampaign();
                         return;
                       }
                       if (!window.confirm("Reset this campaign run? Clears the list, progress, and client send locks (same as Reset workspace). Server still blocks the exact same message to the same address.")) return;
@@ -4140,17 +3500,15 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
           <Card className="animate-fade-in" tourId="progress">
             <h2 className="text-[15px] font-semibold text-ink">Generated Emails</h2>
             <p className="mt-0.5 text-[11.5px] leading-snug text-ink-soft">
-              {mode === "standard"
-                ? "Tap an email to open it in your mail app. Sent rows leave the queue instantly — a sent address is locked."
-                : "Delivered from your connected Gmail profiles. A row is marked Sent only once Gmail confirms it."}
+              Progress is read from the campaign database; rows are marked sent only after Gmail confirms delivery.
             </p>
 
             <div className="mt-2.5 flex items-center gap-1 rounded-full border border-line bg-soft p-0.5">
               {(
                 [
-                  ["all", generated.length - sentCount],
+                  ["all", activeServerCampaignId ? serverCampaignCounts.total : generated.length],
                   ["sent", sentCount],
-                  ["pending", generated.length - sentCount],
+                  ["pending", activeServerCampaignId ? pending : generated.length - sentCount],
                 ] as ["all" | "sent" | "pending", number][]
               ).map(([key, n]) => (
                 <button
@@ -4172,14 +3530,13 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                     on={scout}
                     onClick={() => {
                       if (scout) {
-                        setScout(false);
-                        setEngine("idle");
+                        void pauseCampaign();
                         return;
                       }
                       startCampaign();
                     }}
                   />
-                  <span className="text-[13px] font-semibold text-ink">Auto-Scout</span>
+                  <span className="text-[13px] font-semibold text-ink">Server Worker</span>
                 </div>
                 <span className="rounded-full border border-line bg-white px-2.5 py-1 text-[10px] font-bold tracking-widest text-ink">
                   {scout ? "RUNNING" : "IDLE"}
@@ -4270,10 +3627,10 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
             </div>
 
             <div className="mt-2 max-h-[228px] divide-y divide-line overflow-y-auto rounded-xl border border-line">
-              {shownGenerated.slice(0, 400).map((g) => (
+              {shownGenerated.slice(0, generatedVisibleLimit).map((g) => (
                 <button
                   key={g.id}
-                  onClick={() => mode === "standard" && openMail(g)}
+                  onClick={() => undefined}
                   disabled={g.sent}
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-left ${
                     g.sent ? "bg-brand-soft/60" : ""
@@ -4311,6 +3668,22 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                 </p>
               )}
             </div>
+            {shownGenerated.length > 0 && (
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-ink-soft">
+                  Showing {Math.min(generatedVisibleLimit, shownGenerated.length).toLocaleString()} of {shownGenerated.length.toLocaleString()}
+                </span>
+                {shownGenerated.length > generatedVisibleLimit && (
+                  <button
+                    type="button"
+                    onClick={() => setGeneratedVisibleLimit((current) => Math.min(current + 400, shownGenerated.length))}
+                    className="rounded-full border border-line bg-white px-3 py-1.5 text-[11px] font-semibold text-brand"
+                  >
+                    Load 400 more
+                  </button>
+                )}
+              </div>
+            )}
           </Card>
         )}
       </main>
@@ -4331,195 +3704,6 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
           onCancel={() => setConfirming(null)}
           onConfirm={() => void disconnectProfile(confirming.id, confirming.email)}
         />
-      )}
-      {(confirming?.kind === "duplicate" || confirming?.kind === "risky") && (
-        <Confirm
-          title={`Remove all ${confirming.count} ${confirming.kind} recipients?`}
-          confirmLabel="Remove"
-          onCancel={() => setConfirming(null)}
-          onConfirm={() => removeCategory(confirming.kind)}
-        />
-      )}
-      {confirming?.kind === "cleanup" && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/25 px-6">
-          <div className="w-full max-w-[340px] animate-scale-in rounded-2xl border border-line bg-white p-5 shadow-[0_18px_44px_-26px_oklch(0.31_0.128_268/40%)]">
-            <p className="text-[14px] font-semibold text-ink">List Hygiene & Reputation</p>
-            <p className="mt-1.5 text-[12px] leading-snug text-ink-soft">
-              Found {confirming.duplicate > 0 ? `${confirming.duplicate} duplicate(s)` : ""}{confirming.duplicate > 0 && confirming.risky > 0 ? " and " : ""}{confirming.risky > 0 ? `${confirming.risky} unverified/risky domain(s)` : ""}.
-            </p>
-            <p className="mt-2 text-[11px] leading-snug text-brand bg-brand-soft p-2.5 rounded-xl border border-brand/30">
-              Sending risky emails through Elite Engine can hurt your connected Gmail sender score. Excluded leads are automatically saved to your Quarantine Vault!
-            </p>
-            <div className="mt-4 flex flex-col gap-2">
-              {confirming.risky > 0 && (
-                <button
-                  type="button"
-                  onClick={sendRiskyViaStandard}
-                  className="w-full rounded-full bg-brand py-2 text-[12px] font-semibold text-white shadow-xs hover:opacity-90"
-                >
-                  Send Risky in Standard Mode ({confirming.risky})
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  removeStatuses(["duplicate", "risky"]);
-                  setCleanupHandled(true);
-                  setConfirming(null);
-                  log("Saved unverified leads to Quarantine Vault — sending safe contacts on Elite");
-                  setEngine("sending"); try { if (uid) localStorage.setItem(campaignResumeKey(uid), "1"); localStorage.removeItem("ec-engine-resume"); } catch {} /* EC_RESUME_SENDING_ON_RETURN */;
-                  setScout(true);
-                }}
-                className="w-full rounded-full border border-line bg-soft py-2 text-[12px] font-semibold text-ink hover:bg-neutral-100"
-              >
-                Send Safe on Elite (Save to Vault)
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirming(null)}
-                className="w-full py-1 text-[11.5px] font-medium text-ink-soft hover:text-ink"
-              >
-                Review List First
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-            {vaultOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 p-4 backdrop-blur-xs">
-          <div className="relative flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-line bg-white shadow-[0_24px_50px_-20px_oklch(0.31_0.128_268/45%)] animate-scale-in">
-            <div className="flex items-center justify-between border-b border-line px-5 py-4">
-              <div className="flex items-center gap-2.5">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-brand-soft text-brand">
-                  <Database className="size-5" />
-                </span>
-                <div>
-                  <h3 className="text-[15px] font-bold text-ink">Quarantine Leads Vault</h3>
-                  <p className="text-[11.5px] text-ink-soft">
-                    {quarantineVault.length} unverified & excluded leads preserved safely
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setVaultOpen(false)}
-                className="flex size-8 items-center justify-center rounded-full text-ink-soft hover:bg-neutral-100 hover:text-ink"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-3 overflow-y-auto p-5">
-              <div className="rounded-2xl border border-brand/30 bg-brand-soft p-3 text-[12px] leading-relaxed text-ink">
-                <strong>Why are these here?</strong> The Elite Gmail Engine excludes these addresses to protect your Google account reputation from hard bounces. They are preserved here so your leads are never thrown away.
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={quarantineVault.length === 0}
-                  onClick={() => {
-                    const emails = quarantineVault.map((r) => r.email).join("\n");
-                    navigator.clipboard.writeText(emails);
-                    toast.success("Copied all emails to clipboard!");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-soft px-3.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-neutral-100 disabled:opacity-40"
-                >
-                  <Copy className="size-3.5" /> Copy Emails
-                </button>
-                <button
-                  type="button"
-                  disabled={quarantineVault.length === 0}
-                  onClick={() => {
-                    const rows = [
-                      ["email", "name", "company", "status", "reason"],
-                      ...quarantineVault.map((r) => [r.email, r.name, r.company, r.status, r.reason]),
-                    ];
-                    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `quarantine_leads_${Date.now()}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    toast.success("Downloaded Quarantine CSV!");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-line bg-soft px-3.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-neutral-100 disabled:opacity-40"
-                >
-                  <Download className="size-3.5" /> Export CSV
-                </button>
-                <button
-                  type="button"
-                  disabled={quarantineVault.length === 0}
-                  onClick={() => {
-                    switchMode("standard");
-                    setRecipients(quarantineVault);
-                    const nextGen = buildGenerated(quarantineVault);
-                    setGenerated(nextGen);
-                    generatedRef.current = nextGen;
-                    setFrom(1);
-                    setTo(quarantineVault.length);
-                    setTab("valid");
-                    setCleanupHandled(true);
-                    setVaultOpen(false);
-                    log(`Loaded ${quarantineVault.length} quarantined leads into Standard Mode (Mailto)`);
-                    toast.success("Loaded into Standard Mode", {
-                      description: "Send safely via your device's native mail app without touching the Elite API.",
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-[12px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
-                >
-                  <Send className="size-3.5" /> Load into Standard Mode
-                </button>
-              </div>
-
-              <div className="mt-2 rounded-2xl border border-line bg-soft/50 p-2 max-h-60 overflow-y-auto divide-y divide-line/60">
-                {quarantineVault.length === 0 ? (
-                  <p className="py-6 text-center text-[12.5px] text-ink-soft">
-                    No leads in quarantine. Valid lists pass directly to Elite Engine.
-                  </p>
-                ) : (
-                  quarantineVault.map((item, idx) => (
-                    <div key={`${item.email}-${idx}`} className="flex items-center justify-between py-2 px-2 text-[12px]">
-                      <div className="min-w-0 pr-2">
-                        <p className="font-semibold text-ink truncate">{item.email}</p>
-                        <p className="text-[11px] text-ink-soft truncate">{item.reason || "Excluded by list hygiene"}</p>
-                      </div>
-                      <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium bg-neutral-200 text-neutral-800">
-                        {item.status}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-line bg-neutral-50 px-5 py-3 text-[12px]">
-              {quarantineVault.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (window.confirm("Clear all leads from the Quarantine Vault?")) {
-                      setQuarantineVault([]);
-                      toast.info("Quarantine Vault cleared");
-                    }
-                  }}
-                  className="text-rose-600 hover:underline"
-                >
-                  Clear Vault
-                </button>
-              ) : <div />}
-              <button
-                type="button"
-                onClick={() => setVaultOpen(false)}
-                className="rounded-full bg-ink px-4 py-1.5 text-[12px] font-semibold text-white"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
       )}
       {confirming?.kind === "setting" && (
         <Confirm
@@ -4641,7 +3825,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                   <li>• Rex conversations, messages, memories, memory settings, events, action records, custom features, destinations and personal settings.</li>
                   <li>• Your Private Chat history is removed from your account: your sent messages are deleted, received messages are hidden for your account, and your chat profile and connection requests are removed. Other participants’ copies and shared connections are preserved.</li>
                   <li>• Connected Gmail profile credentials, app connection records and connection-attempt history.</li>
-                  <li>• Planner notes, saved Smart Fill lists, Quarantine Vault recipient records, workspace notes, activity data, local preferences and onboarding progress.</li>
+                  <li>• Planner notes, saved Smart Fill lists, workspace notes, activity data, local preferences and onboarding progress.</li>
                 </ul>
               </div>
               <div className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3.5 text-[11.5px] leading-relaxed text-emerald-950">
@@ -4780,7 +3964,6 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
                 setRexStudioOpen(false);
                 setFeatureStudio(null);
                 setRadarOpen(false);
-                setVaultOpen(false);
                 setPanel("none");
                 setStudioOpen(false);
                 setAssistOpen(true);
@@ -4854,46 +4037,6 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
       {chatSettingsOpen && (
         <ChatSettings settings={settings} onChange={updateSettings} onClose={() => { setChatSettingsOpen(false); const back = chatSettingsReturnToSettings; setChatSettingsReturnToSettings(false); if (back) { setPanel("menu"); setMenuView("settings"); } }} />
       )}
-      {oneSecAsk && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-ink/50 p-4 sm:items-center" role="dialog" aria-modal="true">
-          <div className="w-full max-w-sm rounded-2xl bg-background p-4 shadow-xl">
-            <h3 className="text-[15px] font-bold text-ink">
-              {delay >= 8 ? "8-second delay is the maximum available pace" : "Before you start this campaign"}
-            </h3>
-            <p className="mt-1.5 text-[12.5px] leading-relaxed text-ink-soft">
-We recommend a <b className="text-ink">5-second delay</b> between emails. Choose from 3–8 seconds because Gmail response time can vary, and avoid sending too quickly because it can make your Gmail account look automated and
-              Google can restrict it or lower its reputation, sending future emails to spam.
-            </p>
-            <p className="mt-1.5 text-[12px] text-ink">Current delay: <b>{delay}s</b></p>
-            <a href="/learn-more#pacing-delay" target="_blank" rel="noreferrer" className="mt-1 inline-block text-[12px] font-semibold text-brand underline">
-              Learn more: Email Sending Best Practices &amp; Risks
-            </a>
-            {delay < 3 && (
-              <button
-                onClick={() => {
-setDelay(5);
-  delayRef.current = 5;
-                  oneSecOkRef.current = true;
-                  setOneSecAsk(false);
-                  startCampaign(true);
-                }}
-                className="mt-3 w-full rounded-xl border border-brand px-3 py-2 text-[13px] font-semibold text-brand"
-              >Use 3 seconds and start</button>
-            )}
-            <div className="mt-3 flex gap-2">
-              <button onClick={() => setOneSecAsk(false)} className="flex-1 rounded-xl border border-line px-3 py-2 text-[13px] font-semibold text-ink">Cancel</button>
-              <button
-                onClick={() => {
-                  oneSecOkRef.current = true;
-                  setOneSecAsk(false);
-                  startCampaign(true);
-                }}
-                className="flex-1 rounded-xl bg-brand px-3 py-2 text-[13px] font-semibold text-primary-foreground"
-              >Continue</button>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="fixed top-14 right-3 z-[55] flex flex-col items-end gap-1.5">
         {(engine === "sending" || engine === "paused") && (
           <CampaignTimerChip
@@ -4928,7 +4071,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           setAssistOpen(true);
         }}
       />
-      <EliteTips mode={mode} active={accepted && signedIn && !chatOpen && !radarOpen && !oneSecAsk} />
+      <EliteTips mode={mode} active={accepted && signedIn && !chatOpen && !radarOpen} />
       
             {assistantCelebrate && (
         <div
@@ -5092,11 +4235,11 @@ Please explain this feature and help me with it. Keep this as a discussion first
                     <span className="font-semibold text-ink">2nd flag in the same month:</span> suspension extends to <span className="font-semibold text-ink">30 days</span> with a tighter capacity cap.
                   </li>
                   <li>
-                    <span className="font-semibold text-ink">3rd flag in the same month:</span> the address is <span className="font-semibold text-ink">permanently blocked</span> from connecting on Elite Engine. Standard Mode remains available.
+                    <span className="font-semibold text-ink">3rd flag in the same month:</span> the address is <span className="font-semibold text-ink">permanently blocked</span> from connecting on Elite Engine. the server queue remains the only supported delivery path.
                   </li>
                 </ul>
                 <p className="mt-2">
-                  Standard Mode (mailto) is not affected by these Engine suspensions. Always connect Gmail accounts you are allowed to use for outreach, keep pacing sensible, and avoid lists that produce high bounce or spam complaints.
+                  All campaign delivery runs through the persistent Gmail API worker. Always connect Gmail accounts you are allowed to use for outreach, keep pacing sensible, and avoid lists that produce high bounce or spam complaints.
                 </p>
               </section>
 
@@ -5191,7 +4334,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           resumeConversationId={rexResumeConversationId}
           onPrepareCampaign={prepareCurrentCampaignForRex}
           onExecuteCurrentCampaign={async () => {
-            const started = await startCampaign(true);
+            const started = await startCampaign();
             if (started) setFeatureStudio("tracker");
             return started;
           }}
@@ -5231,7 +4374,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
               parsed = numeric;
             } else {
               const enums: Record<string, string[]> = {
-                sendingMode: ["both","elite","standard"],
+                sendingMode: ["elite"],
                 notificationSound: ["note","bell","popcorn"],
                 sendingSoundVariant: ["air-swish","air-swish-long","air-swish-soft","soft-sweep","pass-by"],
                 alarmRingtone: ["note","bell","popcorn"],
@@ -5314,9 +4457,8 @@ Please explain this feature and help me with it. Keep this as a discussion first
                 totalRecipients: recipients.length,
                 generatedRecipients: generated.length,
                 sentCount,
-                remaining: Math.max(0, generated.length - sentCount),
+                remaining: activeServerCampaignId ? pending : Math.max(0, generated.length - sentCount),
                 selectedRange: { from, to },
-                quarantinedCount: quarantineVault.length,
                 serverCampaigns: persistedCampaignWorkspace.campaigns.map((campaign) => ({
                   id: campaign.id, name: campaign.name, status: campaign.status,
                   totalRecipients: campaign.total_recipients, sentCount: campaign.actualSent,
@@ -5368,7 +4510,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           account={{
             mode,
             engineStatus: engine,
-            sendInFlight: sendLockRef.current,
+            sendInFlight: false,
             plan: entitlements?.plan ?? "free",
             connectedGmails: profiles.length,
             currentGmailSenderEmail: current?.email ?? "",
@@ -5377,7 +4519,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
             delaySeconds: delay,
             recipients: generated.length,
             sent: sentCount,
-            quarantined: quarantineVault.length,
             remaining: Math.max(0, generated.length - sentCount),
             gmailProfiles: profiles.map((pr: any) => `${pr?.email ?? "gmail"} · ${pr?.status ?? "?"} · sent ${pr?.sent ?? pr?.sentToday ?? 0}/${pr?.limit ?? pr?.dailyLimit ?? "?"}`),
             recentActivity: notes.slice(0, 12),
@@ -5394,7 +4535,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
               generatedMessages: generated.slice(0, 100).map(({ email, name, company, template, subject, body, sent }) => ({ email, name, company, template, subject, body, sent })),
               campaignSentCount: sentCount,
               serverCampaigns: persistedCampaignWorkspace.campaigns, serverCampaignRecipients: persistedCampaignWorkspace.recipients, serverSentLast24Hours: persistedCampaignWorkspace.sentLast24Hours, campaignDataSource: persistedCampaignWorkspace.source, localWorkspaceRunCache: campaignRuns.slice(0, 5).map(run => ({ id: run.id, status: run.status, startedAt: run.startedAt, sentCount: run.sentCount, skippedCount: run.skippedCount, failedCount: run.failedCount })),
-              quarantinedCount: quarantineVault.length,
               truncated: recipients.length > 100 || generated.length > 100,
             }),
             walkthrough: tipsOff ? "off" : "on",
@@ -5411,21 +4551,8 @@ Please explain this feature and help me with it. Keep this as a discussion first
           initialTab={radarTab}
           onClose={() => setRadarOpen(false)}
           sentCount={sentCount}
-          totalCount={generated.length}
+          totalCount={activeServerCampaignId ? serverCampaignCounts.total : generated.length}
           pacingSeconds={delay}
-          quarantineVault={quarantineVault}
-          onClearVault={() => {
-            if (window.confirm("Clear all leads from the Quarantine Vault?")) {
-              setQuarantineVault([]);
-              toast.info("Quarantine Vault cleared");
-            }
-          }}
-          onLoadVaultToStandard={() => {
-            if (quarantineVault.length === 0) return;
-            setRecipients(quarantineVault);
-            setMode("standard");
-            toast.success(`Loaded ${quarantineVault.length} leads into Standard Mode`);
-          }}
           onApplyTemplate={(tpl) => {
             setTplA(tpl);
             toast.success("Applied to Template A");
@@ -5444,7 +4571,6 @@ Please explain this feature and help me with it. Keep this as a discussion first
             setRexPersonalDestinationId(null);
             setFeatureStudio(null);
             setRadarOpen(false);
-            setVaultOpen(false);
             setPanel("none");
             setStudioOpen(false);
             setAssistOpen(true);

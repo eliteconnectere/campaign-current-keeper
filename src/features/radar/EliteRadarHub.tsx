@@ -10,9 +10,6 @@ export type EliteRadarHubProps = {
   sentCount: number;
   totalCount: number;
   pacingSeconds: number;
-  quarantineVault: Array<{ email: string; name?: string; company?: string; status?: string; reason?: string }>;
-  onClearVault: () => void;
-  onLoadVaultToStandard: () => void;
   onApplyTemplate: (tpl: { subject: string; body: string }) => void;
   activeProfileEmail?: string;
   isSending?: boolean;
@@ -54,10 +51,9 @@ function persistSnippets(list: Snippet[]) {
 }
 
 export function EliteRadarHub({
-  onClose, sentCount, totalCount, pacingSeconds, quarantineVault,
-  onClearVault, onLoadVaultToStandard, onApplyTemplate, activeProfileEmail, isSending, initialTab,
-}: EliteRadarHubProps & { initialTab?: "radar" | "vault" | "snippets" | "monitor" }) {
-  const [tab, setTab] = useState<"radar" | "vault" | "snippets" | "monitor">(initialTab ?? "radar");
+  onClose, sentCount, totalCount, pacingSeconds, onApplyTemplate, activeProfileEmail, isSending, initialTab,
+}: EliteRadarHubProps & { initialTab?: "radar" | "snippets" | "monitor" }) {
+  const [tab, setTab] = useState<"radar" | "snippets" | "monitor">(initialTab ?? "radar");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>(() => loadSnippets());
   const [addOpen, setAddOpen] = useState(false);
@@ -115,7 +111,7 @@ export function EliteRadarHub({
 
   const safeLimit = 500;
   const pct = Math.min(100, Math.round((sentCount / safeLimit) * 100));
-  const health = quarantineVault.length === 0 ? 100 : Math.max(70, 100 - quarantineVault.length * 3);
+  const health = 100;
 
   return (
     <div className="fixed inset-0 z-[80] flex flex-col bg-[#0b1220]/95 text-white backdrop-blur-md">
@@ -129,7 +125,7 @@ export function EliteRadarHub({
               <h2 className="text-[15px] font-bold">Elite Radar Hub</h2>
               <span className="rounded bg-brand/20 px-1.5 py-0.5 text-[10px] font-semibold text-brand">LIVE</span>
             </div>
-            <p className="text-[11px] text-white/60">Deliverability · Quotas · Safeguards</p>
+            <p className="text-[11px] text-white/60">Delivery · Quotas · Safeguards</p>
           </div>
         </div>
         <button type="button" onClick={onClose} className="rounded-full p-2 text-white/70 hover:bg-white/10" aria-label="Close">
@@ -140,7 +136,6 @@ export function EliteRadarHub({
       <div className="flex gap-1 overflow-x-auto border-b border-white/10 bg-[#0f172a] px-3">
         {([
           ["radar", "Health", Activity],
-          ["vault", "Vault", ShieldCheck],
           ["snippets", "Snippets", Sparkles],
           ["monitor", "Monitor", Radio],
         ] as const).map(([id, label, Icon]) => (
@@ -149,9 +144,6 @@ export function EliteRadarHub({
               tab === id ? "border-brand text-brand" : "border-transparent text-white/60"
             }`}>
             <Icon className="size-4" /> {label}
-            {id === "vault" && quarantineVault.length > 0 && (
-              <span className="rounded-full bg-amber-500/20 px-1.5 text-[10px] font-bold text-amber-300">{quarantineVault.length}</span>
-            )}
           </button>
         ))}
       </div>
@@ -167,7 +159,7 @@ export function EliteRadarHub({
                   {health > 90 ? "Grade A+" : "Safe"}
                 </span>
               </div>
-              <p className="mt-2 text-[12px] text-white/70">Dead domains and unverified addresses are quarantined before send.</p>
+              <p className="mt-2 text-[12px] text-white/70">The campaign queue tracks delivery status from the server.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-white/10 bg-[#121c2e] p-4">
@@ -186,59 +178,11 @@ export function EliteRadarHub({
             <div className="rounded-xl border border-white/10 bg-[#121c2e] p-4">
               <h4 className="mb-2 flex items-center gap-2 text-[13px] font-bold"><ShieldCheck className="size-4 text-brand" /> Shields On</h4>
               <div className="grid grid-cols-1 gap-2 text-[12px] sm:grid-cols-2">
-                {["Permanent Dedup", "Bounce Quarantine", "MX Domain Scan", "Google OAuth"].map((t) => (
+                {["Permanent Dedup", "Recipient Syntax Check", "MX Domain Scan", "Google OAuth"].map((t) => (
                   <div key={t} className="flex items-center gap-2 rounded-lg bg-white/5 p-2"><span className="size-2 rounded-full bg-emerald-400" />{t}</div>
                 ))}
               </div>
             </div>
-          </div>
-        )}
-
-        {tab === "vault" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#121c2e] p-4">
-              <div>
-                <h3 className="text-[14px] font-bold">Quarantined</h3>
-                <p className="text-[12px] text-white/60">{quarantineVault.length} leads excluded for domain safety</p>
-              </div>
-              <div className="flex gap-2">
-                <button type="button" disabled={!quarantineVault.length} onClick={() => {
-                  const header = ["Email","Name","Company","Status","Reason"];
-                  const rows = quarantineVault.map((r) => [r.email, r.name||"", r.company||"", r.status||"", r.reason||""]);
-                  const csv = [header, ...rows].map((row) => row.map((c) => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
-                  const a = document.createElement("a");
-                  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
-                  a.download = `quarantine_${Date.now()}.csv`;
-                  a.click();
-                  toast.success("CSV downloaded");
-                }} className="flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-40">
-                  <Download className="size-3.5" /> CSV
-                </button>
-                <button type="button" disabled={!quarantineVault.length} onClick={() => { onLoadVaultToStandard(); onClose(); }}
-                  className="rounded-lg bg-brand px-2.5 py-1.5 text-[11px] font-semibold disabled:opacity-40">Standard Mode</button>
-              </div>
-            </div>
-            {!quarantineVault.length ? (
-              <div className="rounded-2xl border border-dashed border-white/15 p-8 text-center">
-                <ShieldCheck className="mx-auto size-10 text-emerald-400" />
-                <p className="mt-2 text-[14px] font-bold">Vault empty — clean list</p>
-              </div>
-            ) : (
-              <div className="max-h-[360px] space-y-2 overflow-y-auto">
-                {quarantineVault.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between rounded-lg bg-[#121c2e] p-3 text-[12px]">
-                    <div className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{item.email}</span>
-                      <span className="text-[11px] text-amber-400/80">{item.reason || "Domain safety"}</span>
-                    </div>
-                    <span className="rounded bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">{item.status || "quarantined"}</span>
-                  </div>
-                ))}
-                <button type="button" onClick={onClearVault} className="text-[11px] text-rose-400 hover:underline">
-                  <Trash2 className="mr-1 inline size-3" />Clear vault
-                </button>
-              </div>
-            )}
           </div>
         )}
 
@@ -372,7 +316,7 @@ export function EliteRadarHub({
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Sent</span><span className="text-xl font-bold text-emerald-400">{sentCount}</span></div>
                 <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Queue</span><span className="text-xl font-bold">{totalCount}</span></div>
-                <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Vault</span><span className="text-xl font-bold text-amber-400">{quarantineVault.length}</span></div>
+                <div className="rounded-lg bg-white/5 p-2.5"><span className="block text-[11px] text-white/50">Remaining</span><span className="text-xl font-bold">{Math.max(0, totalCount - sentCount)}</span></div>
               </div>
             </div>
             <p className="rounded-xl border border-white/10 bg-[#121c2e] p-4 text-[12px] text-white/70">

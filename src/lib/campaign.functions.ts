@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 
 async function requireCampaignEntitlement(userId: string) {
   const [{ ensureBilling, entitlementsFor }, { supabaseAdmin }] = await Promise.all([
@@ -19,70 +19,133 @@ async function requireCampaignEntitlement(userId: string) {
   return entitlements;
 }
 
+
+async function kickCampaignWorker(campaignId: string): Promise<{ dispatched: boolean; status?: number }> {
+  const secret = process.env["CAMPAIGN_WORKER_SECRET"] || process.env["CRON_SECRET"];
+  if (!secret) return { dispatched: false };
+  const host = process.env["VERCEL_URL"]
+    ? `https://${process.env["VERCEL_URL"]}`
+    : process.env["NEXT_PUBLIC_SITE_URL"] || "https://eliteconnectere.site";
+  try {
+    const response = await fetch(`${host}/api/public/process-campaigns`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+        "x-campaign-worker-secret": secret,
+      },
+      body: JSON.stringify({ campaignId }),
+      signal: AbortSignal.timeout(55_000),
+    });
+    if (!response.ok) return { dispatched: false, status: response.status };
+    const result = await response.json().catch(() => null) as { ok?: boolean } | null;
+    return { dispatched: result?.ok === true, status: response.status };
+  } catch {
+    return { dispatched: false };
+  }
+}
+
 export const enqueueCampaign = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { name?: string; subject: string; body: string; delaySeconds?: number; recipients: Array<{ email: string; name?: string; subject?: string; body?: string }> }) => {
-    if (!input || !Array.isArray(input.recipients) || input.recipients.length === 0) throw new Error("At least one recipient is required.");
-    const recipients = input.recipients.map((recipient) => ({
-      email: String(recipient.email ?? "").trim().toLowerCase(),
-      name: String(recipient.name ?? "").slice(0, 200) || null,
-      subject: String(recipient.subject ?? input.subject ?? "").trim().slice(0, 500),
-      body: String(recipient.body ?? input.body ?? "").slice(0, 20_000),
-    }));
-    if (recipients.some((recipient) => !EMAIL_RE.test(recipient.email))) throw new Error("Remove invalid email addresses before preparing this campaign.");
-    const uniqueRecipientEmails = new Set(recipients.map((recipient) => recipient.email));
-    if (uniqueRecipientEmails.size !== recipients.length) {
-      throw new Error("Duplicate email addresses were found. Remove duplicates before preparing this campaign; no campaign was created.");
+  .inputValidator((input: {
+    name?: string;
+    subject: string;
+    body: string;
+    delaySeconds?: number;
+    recipients: Array<{ email: string; name?: string; subject?: string; body?: string }>;
+  }) => {
+    if (!input || !Array.isArray(input.recipients) || input.recipients.length === 0) {
+      throw new Error("At least one valid recipient is required.");
     }
-    if (recipients.some((recipient) => !recipient.subject.trim() || !recipient.body.trim())) {
-      throw new Error("Every campaign recipient must have a complete subject and message body. Empty templates cannot be queued or sent.");
-    }
+    const seen = new Set<string>();
+    const recipients = input.recipients.flatMap((recipient) => {
+      const email = String(recipient.email ?? "").trim().toLowerCase();
+      if (!EMAIL_RE.test(email) || seen.has(email)) return [];
+      seen.add(email);
+      return [{
+        email,
+        name: String(recipient.name ?? "").slice(0, 200) || null,
+        subject: String(recipient.subject ?? input.subject).slice(0, 998),
+        body: String(recipient.body ?? input.body).slice(0, 100_000),
+      }];
+    });
+    if (recipients.length === 0) throw new Error("No syntactically valid unique email addresses remain.");
+    const subject = String(input.subject ?? "").trim().slice(0, 998);
+    const body = String(input.body ?? "").trim().slice(0, 100_000);
+    if (!subject || !body) throw new Error("Add both a campaign subject and message body before execution.");
     return {
-      name: String(input.name ?? "Campaign").slice(0, 200),
-      subject: String(input.subject ?? "").trim().slice(0, 500),
-      body: String(input.body ?? "").slice(0, 20_000),
-      delaySeconds: [3, 4, 5, 8].includes(Number(input.delaySeconds)) ? Number(input.delaySeconds) : 5,
+      name: String(input.name ?? "Campaign").trim().slice(0, 160) || "Campaign",
+      subject,
+      body,
+      delaySeconds: Math.min(8, Math.max(3, Number(input.delaySeconds) || 5)),
       recipients,
     };
   })
   .handler(async ({ data, context }) => {
     await requireCampaignEntitlement(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: recentPending, error: pendingLookupError } = await supabaseAdmin
-      .from("campaigns")
-      .select("id,total_recipients,created_at")
+    const now = new Date().toISOString();
+
+    // Idempotently reuse an identical active campaign if the user double-taps Execute.
+    const { data: active, error: activeError } = await supabaseAdmin.from("campaigns")
+      .select("id,total_recipients,status")
       .eq("user_id", context.userId)
-      .eq("status", "pending_approval")
+      .in("status", ["queued", "running", "paused"])
       .eq("subject", data.subject)
       .eq("body", data.body)
-      .gte("created_at", new Date(Date.now() - 10 * 60_000).toISOString())
+      .eq("delay_seconds", data.delaySeconds)
       .order("created_at", { ascending: false })
       .limit(5);
-    if (pendingLookupError) throw pendingLookupError;
-    const incomingEmails = data.recipients.map((recipient) => recipient.email).sort();
-    for (const existing of recentPending ?? []) {
-      if (Number(existing.total_recipients) !== incomingEmails.length) continue;
-      const { data: existingRecipients, error: existingRecipientsError } = await supabaseAdmin
-        .from("campaign_recipients").select("email").eq("campaign_id", existing.id);
-      if (existingRecipientsError) throw existingRecipientsError;
-      const existingEmails = (existingRecipients ?? []).map((row: { email: string }) => String(row.email).trim().toLowerCase()).sort();
-      if (existingEmails.length === incomingEmails.length && existingEmails.every((email: string, index: number) => email === incomingEmails[index])) {
-        return { campaignId: existing.id, status: "pending_approval" as const, reused: true };
+    if (activeError) throw activeError;
+    const incoming = data.recipients.map((r) => [r.email, r.subject, r.body].join("\u0000")).sort();
+    for (const existing of active ?? []) {
+      if (Number(existing.total_recipients) !== incoming.length) continue;
+      const { data: rows, error } = await supabaseAdmin.from("campaign_recipients")
+        .select("email,message_subject,message_body").eq("campaign_id", existing.id);
+      if (error) throw error;
+      const existingRecipients = (rows ?? []).map((r: { email: string; message_subject?: string | null; message_body?: string | null }) =>
+        [String(r.email).trim().toLowerCase(), String(r.message_subject ?? data.subject), String(r.message_body ?? data.body)].join("\u0000")
+      ).sort();
+      if (existingRecipients.length === incoming.length && existingRecipients.every((item: string, i: number) => item === incoming[i])) {
+        let status = existing.status;
+        if (status === "paused") {
+          const { data: resumed, error: resumeError } = await supabaseAdmin.from("campaigns").update({
+            status: "queued", paused_at: null, next_run_at: now, last_error: null, updated_at: now,
+          }).eq("id", existing.id).eq("user_id", context.userId).eq("status", "paused")
+            .select("status").maybeSingle();
+          if (resumeError) throw resumeError;
+          if (resumed) status = resumed.status;
+        }
+        const dispatch = await kickCampaignWorker(existing.id);
+        return { campaignId: existing.id, status, reused: true, dispatch };
       }
     }
-    const { data: campaign, error } = await supabaseAdmin
-      .from("campaigns")
-      .insert({
-        user_id: context.userId, name: data.name, subject: data.subject, body: data.body,
-        status: "pending_approval", total_recipients: data.recipients.length, delay_seconds: data.delaySeconds,
-        last_error: "Waiting for your approval. Rex has not started sending.",
-      })
-      .select("id")
-      .single();
-    if (error || !campaign) throw error ?? new Error("Could not prepare campaign.");
+
+    const { data: campaign, error } = await supabaseAdmin.from("campaigns").insert({
+      user_id: context.userId,
+      name: data.name,
+      subject: data.subject,
+      body: data.body,
+      status: "pending_approval",
+      total_recipients: data.recipients.length,
+      sent_count: 0,
+      failed_count: 0,
+      permanent_send_protection: true,
+      delay_seconds: data.delaySeconds,
+      approved_at: now,
+      scheduled_at: now,
+      next_run_at: now,
+      last_error: null,
+    }).select("id,status,total_recipients,sent_count").single();
+    if (error || !campaign) throw error ?? new Error("Could not create the server campaign.");
+
     const recipientRows = data.recipients.map((recipient) => ({
-      campaign_id: campaign.id, email: recipient.email, recipient_name: recipient.name,
-      message_subject: recipient.subject, message_body: recipient.body,
+      campaign_id: campaign.id,
+      email: recipient.email,
+      recipient_name: recipient.name,
+      message_subject: recipient.subject,
+      message_body: recipient.body,
+      status: "pending",
     }));
     for (let offset = 0; offset < recipientRows.length; offset += 500) {
       const { error: recipientError } = await supabaseAdmin.from("campaign_recipients")
@@ -92,7 +155,94 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
         throw recipientError;
       }
     }
-    return { campaignId: campaign.id, status: "pending_approval" as const };
+
+    // Publish to the worker only after every recipient row has been persisted.
+    const { data: queuedCampaign, error: queueError } = await supabaseAdmin.from("campaigns").update({
+      status: "queued",
+      approved_at: now,
+      scheduled_at: now,
+      next_run_at: now,
+      last_error: null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", campaign.id).eq("user_id", context.userId).eq("status", "pending_approval")
+      .select("id,status,total_recipients,sent_count").single();
+    if (queueError || !queuedCampaign) {
+      await supabaseAdmin.from("campaigns").delete().eq("id", campaign.id).eq("user_id", context.userId);
+      throw queueError ?? new Error("Campaign recipients were saved, but the campaign could not enter the execution queue.");
+    }
+
+    const dispatch = await kickCampaignWorker(campaign.id);
+    if (!dispatch.dispatched) {
+      // Leave the durable queue intact: Railway's poller will claim it on its next cycle.
+      await supabaseAdmin.from("campaigns").update({
+        last_error: dispatch.status
+          ? `Immediate worker dispatch returned HTTP ${dispatch.status}; background polling will retry.`
+          : "Immediate worker dispatch was unavailable; background polling will retry.",
+        updated_at: new Date().toISOString(),
+      }).eq("id", campaign.id).eq("user_id", context.userId);
+    }
+    return { campaignId: campaign.id, status: queuedCampaign.status, reused: false, dispatch };
+  });
+
+export const getCampaignExecutionProgress = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { campaignId: string }) => {
+    const campaignId = String(input?.campaignId ?? "").trim();
+    if (!/^[0-9a-f-]{36}$/i.test(campaignId)) throw new Error("Invalid campaign.");
+    return { campaignId };
+  })
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin as any;
+    const { data: campaign, error } = await db.from("campaigns")
+      .select("id,status,sent_count,total_recipients,failed_count")
+      .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
+    if (error) throw error;
+    if (!campaign) throw new Error("Campaign not found in your account.");
+    // The recipient rows are the source of truth. The campaign counters are
+    // denormalized worker snapshots and can lag briefly while a batch is being
+    // processed; using them directly made the UI show impossible All/Pending
+    // combinations and stale progress after refresh.
+    const countStatus = (status?: string) => {
+      let query = db.from("campaign_recipients")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", data.campaignId);
+      if (status) query = query.eq("status", status);
+      return query;
+    };
+    const [totalResult, sentResult, pendingResult, sendingResult, failedResult, sentRowsResult] = await Promise.all([
+      countStatus(),
+      countStatus("sent"),
+      countStatus("pending"),
+      countStatus("sending"),
+      countStatus("failed"),
+      db.from("campaign_recipients")
+        .select("email").eq("campaign_id", data.campaignId).eq("status", "sent")
+        .order("created_at", { ascending: true }).limit(10000),
+    ]);
+    for (const result of [totalResult, sentResult, pendingResult, sendingResult, failedResult, sentRowsResult]) {
+      if (result.error) throw result.error;
+    }
+    const actualTotal = Number(totalResult.count ?? 0);
+    const actualSent = Number(sentResult.count ?? 0);
+    const actualPending = Number(pendingResult.count ?? 0);
+    const actualSending = Number(sendingResult.count ?? 0);
+    const actualFailed = Number(failedResult.count ?? 0);
+    return {
+      campaign: {
+        ...campaign,
+        total_recipients: actualTotal,
+        sent_count: actualSent,
+        failed_count: actualFailed,
+        pending_count: actualPending,
+        sending_count: actualSending,
+      },
+      countsSource: "campaign_recipients",
+      countersReconciled: actualTotal !== Number(campaign.total_recipients ?? 0)
+        || actualSent !== Number(campaign.sent_count ?? 0)
+        || actualFailed !== Number(campaign.failed_count ?? 0),
+      sentEmails: (sentRowsResult.data ?? []).map((row: { email: string }) => String(row.email).trim().toLowerCase()),
+    };
   });
 
 export const listRexCampaigns = createServerFn({ method: "GET" })
@@ -296,7 +446,8 @@ export const controlRexManagedCampaign = createServerFn({ method: "POST" })
       status: "queued", paused_at: null, next_run_at: now, last_error: null, updated_at: now,
     }).eq("id", data.campaignId).eq("user_id", context.userId).eq("status", "paused").select("id,status").maybeSingle();
     if (error || !updated) throw new Error("Rex could not resume this campaign.");
-    return { ok: true as const, campaign: updated };
+    const dispatch = await kickCampaignWorker(data.campaignId);
+    return { ok: true as const, campaign: updated, dispatch };
   });
 
 export function isRexMonitoredCampaign(campaign: { rex_monitored?: boolean | null } | null | undefined): boolean {
