@@ -551,6 +551,7 @@ function Workspace() {
   const activeCampaignIdRef = useRef<string | null>(null);
   const [activeServerCampaignId, setActiveServerCampaignId] = useState<string | null>(null);
   const [serverCampaignStatus, setServerCampaignStatus] = useState<string>("idle");
+  const [serverCampaignCounts, setServerCampaignCounts] = useState({ sent: 0, total: 0, failed: 0 });
   const sentRecipientEmailsRef = useRef<Set<string>>(new Set());
   const [genTab, setGenTab] = useState<"all" | "sent" | "pending">("all");
 
@@ -656,6 +657,50 @@ function Workspace() {
     const timer = window.setInterval(refresh, 60000);
     return () => { active = false; window.clearInterval(timer); };
   }, [uid]);
+  useEffect(() => {
+    if (!uid || activeServerCampaignId) return;
+    let live = true;
+    void (supabase as any).from("campaigns")
+      .select("id,status,sent_count,total_recipients,failed_count")
+      .eq("user_id", uid).in("status", ["queued", "running", "paused"])
+      .order("created_at", { ascending: false }).limit(1).maybeSingle()
+      .then(({ data, error }: any) => {
+        if (!live || error || !data) return;
+        setActiveServerCampaignId(data.id);
+        setServerCampaignStatus(data.status);
+        setServerCampaignCounts({ sent: Number(data.sent_count ?? 0), total: Number(data.total_recipients ?? 0), failed: Number(data.failed_count ?? 0) });
+        setEngine(data.status === "paused" ? "paused" : "sending");
+        setScout(data.status !== "paused");
+      });
+    return () => { live = false; };
+  }, [uid, activeServerCampaignId]);
+
+  useEffect(() => {
+    if (!uid || !activeServerCampaignId) return;
+    let live = true;
+    const refreshServerCampaign = async () => {
+      const { data: campaign, error } = await (supabase as any).from("campaigns")
+        .select("id,status,sent_count,total_recipients,failed_count")
+        .eq("id", activeServerCampaignId).eq("user_id", uid).maybeSingle();
+      if (!live || error || !campaign) return;
+      const sent = Number(campaign.sent_count ?? 0);
+      const total = Number(campaign.total_recipients ?? 0);
+      const failed = Number(campaign.failed_count ?? 0);
+      setServerCampaignStatus(campaign.status);
+      setServerCampaignCounts({ sent, total, failed });
+      const { data: rows } = await (supabase as any).from("campaign_recipients")
+        .select("email,status").eq("campaign_id", activeServerCampaignId);
+      if (!live) return;
+      const sentEmails = new Set((rows ?? []).filter((row: any) => row.status === "sent").map((row: any) => String(row.email).trim().toLowerCase()));
+      setGenerated((previous) => previous.map((row) => ({ ...row, sent: sentEmails.has(row.email.trim().toLowerCase()) || row.sent })));
+      if (campaign.status === "paused") { setEngine("paused"); setScout(false); }
+      else if (["queued", "running"].includes(campaign.status)) { setEngine("sending"); setScout(true); }
+      else { setEngine("idle"); setScout(false); setNextInSec(null); }
+    };
+    void refreshServerCampaign();
+    const timer = window.setInterval(() => void refreshServerCampaign(), 3000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [uid, activeServerCampaignId]);
   const [authChecked, setAuthChecked] = useState(false);
   const [gmailBusy, setGmailBusy] = useState(false);
   const [connectMethodOpen, setConnectMethodOpen] = useState(false);
@@ -1455,9 +1500,9 @@ function Workspace() {
     duplicate: recipients.filter((r) => r.status === "duplicate").length,
     risky: recipients.filter((r) => r.status === "risky").length,
   };
-  const sentCount = generated.filter((g) => g.sent).length;
+  const sentCount = activeServerCampaignId ? serverCampaignCounts.sent : generated.filter((g) => g.sent).length;
   // Pending/Queued cover the whole current dataset — nothing is dropped unless the user removes it.
-  const pending = validated ? Math.max(generated.length - sentCount, 0) : 0;
+  const pending = activeServerCampaignId ? Math.max(serverCampaignCounts.total - serverCampaignCounts.sent - serverCampaignCounts.failed, 0) : validated ? Math.max(generated.length - sentCount, 0) : 0;
 
   function buildGenerated(list: Recipient[]) {
     const hasA = Boolean(tplA.subject.trim() && tplA.body.trim());
