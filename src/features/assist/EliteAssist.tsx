@@ -112,8 +112,8 @@ export function EliteAssist({
   onGo?: (place: AssistPlace) => void;
   onPrepareCampaign?: () => Promise<string>;
   onExecuteCurrentCampaign?: () => Promise<boolean>;
-  onPauseCurrentCampaign?: () => boolean;
-  onStopCurrentCampaign?: () => boolean;
+  onPauseCurrentCampaign?: () => boolean | Promise<boolean>;
+  onStopCurrentCampaign?: () => boolean | Promise<boolean>;
   onImportRecipients?: (raw: string, sourceName?: string) => boolean;
   onValidateRecipients?: () => Promise<{ ok: boolean; valid: number; risky: number; duplicate: number }>;
   onReadActiveWorkspace?: (areas: string[]) => Promise<Record<string, unknown>> | Record<string, unknown>;
@@ -504,10 +504,10 @@ export function EliteAssist({
     let note = "";
     let ok = false;
     if (action === "pause") {
-      ok = Boolean(onPauseCurrentCampaign && onPauseCurrentCampaign());
+      ok = (onPauseCurrentCampaign ? await onPauseCurrentCampaign() : false);
       note = ok ? "Campaign paused." : "Could not pause.";
     } else if (action === "stop") {
-      ok = Boolean(onStopCurrentCampaign && onStopCurrentCampaign());
+      ok = (onStopCurrentCampaign ? await onStopCurrentCampaign() : false);
       note = ok ? "Campaign stopped." : "Could not stop.";
     } else {
       ok = onExecuteCurrentCampaign ? await onExecuteCurrentCampaign() : false;
@@ -981,10 +981,10 @@ export function EliteAssist({
           let note = "";
           let ok = false;
           if (wantsStop) {
-            ok = Boolean(onStopCurrentCampaign && onStopCurrentCampaign());
+            ok = (onStopCurrentCampaign ? await onStopCurrentCampaign() : false);
             note = ok ? "Campaign stopped." : "Nothing to stop right now (or stop is locked in Rex Studio Monitor).";
           } else if (wantsPause) {
-            ok = Boolean(onPauseCurrentCampaign && onPauseCurrentCampaign());
+            ok = (onPauseCurrentCampaign ? await onPauseCurrentCampaign() : false);
             note = ok ? "Campaign paused." : "Nothing to pause right now (or pause is locked in Rex Studio Monitor).";
           } else {
             ok = onExecuteCurrentCampaign ? await onExecuteCurrentCampaign() : false;
@@ -1546,10 +1546,10 @@ export function EliteAssist({
         let ok = false;
         let note = "";
         if (action === "pause") {
-          ok = Boolean(onPauseCurrentCampaign && onPauseCurrentCampaign());
+          ok = (onPauseCurrentCampaign ? await onPauseCurrentCampaign() : false);
           note = ok ? "Campaign paused." : "Could not pause (no active send, or pause is locked by Rex Monitor in Studio).";
         } else if (action === "stop") {
-          ok = Boolean(onStopCurrentCampaign && onStopCurrentCampaign());
+          ok = (onStopCurrentCampaign ? await onStopCurrentCampaign() : false);
           note = ok ? "Campaign stopped." : "Could not stop (no active campaign, or stop is locked by Rex Monitor in Studio).";
         } else {
           // resume = start again

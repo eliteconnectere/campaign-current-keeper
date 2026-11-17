@@ -1243,6 +1243,7 @@ function Workspace() {
     const snapshot: WorkspaceSnapshot = {
       v: 1,
       mode: "elite",
+      cleanupHandled: true,
       raw,
       recipients,
       validated,
@@ -3192,7 +3193,7 @@ function Workspace() {
             </div>
 
             <div className="mt-2 max-h-[168px] divide-y divide-line overflow-y-auto rounded-xl border border-line">
-              {tabList.slice(0, 400).map((r, i) => (
+              {tabList.map((r, i) => (
                 <div key={`${r.email}-${i}`} className="flex items-center gap-2 px-3 py-1.5">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-mono text-[12px] text-ink">{r.email}</p>
@@ -3621,8 +3622,7 @@ function Workspace() {
               </div>
 
               <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-ink">
-                <Info className="mt-px size-3 shrink-0 text-brand" /> Not working? Check if pop-ups
-                are allowed in your browser.
+                <Info className="mt-px size-3 shrink-0 text-brand" /> Sending runs on the server through your connected Gmail profiles — you can lock your phone or close this tab.
               </p>
             </div>
 
