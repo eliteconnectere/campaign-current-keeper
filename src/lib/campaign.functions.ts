@@ -96,28 +96,16 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
       .order("created_at", { ascending: false })
       .limit(5);
     if (activeError) throw activeError;
-    const incoming = data.recipients.map((r) => r.email).sort();
+    const incoming = data.recipients.map((r) => [r.email, r.subject, r.body].join("\u0000")).sort();
     for (const existing of active ?? []) {
       if (Number(existing.total_recipients) !== incoming.length) continue;
       const { data: rows, error } = await supabaseAdmin.from("campaign_recipients")
         .select("email,message_subject,message_body").eq("campaign_id", existing.id);
       if (error) throw error;
-      const saved = (rows ?? []).map((row: { email: string; message_subject?: string | null; message_body?: string | null }) => ({
-        email: String(row.email).trim().toLowerCase(),
-        subject: String(row.message_subject ?? ""),
-        body: String(row.message_body ?? ""),
-      })).sort((a, b) => a.email.localeCompare(b.email));
-      const requested = data.recipients.map((row) => ({
-        email: row.email,
-        subject: row.subject,
-        body: row.body,
-      })).sort((a, b) => a.email.localeCompare(b.email));
-      const identical = saved.length === incoming.length && saved.every((row, index) =>
-        row.email === requested[index]?.email &&
-        row.subject === requested[index]?.subject &&
-        row.body === requested[index]?.body
-      );
-      if (identical) {
+      const existingRecipients = (rows ?? []).map((r: { email: string; message_subject?: string | null; message_body?: string | null }) =>
+        [String(r.email).trim().toLowerCase(), String(r.message_subject ?? data.subject), String(r.message_body ?? data.body)].join("\u0000")
+      ).sort();
+      if (existingRecipients.length === incoming.length && existingRecipients.every((item: string, i: number) => item === incoming[i])) {
         let status = existing.status;
         if (status === "paused") {
           const { data: resumed, error: resumeError } = await supabaseAdmin.from("campaigns").update({
