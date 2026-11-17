@@ -115,52 +115,52 @@ const KNOWN_TYPO_DOMAINS = new Set([
   "outlok.com", "outloo.com", "outlook.con"
 ]);
 
+const EMAIL_SYNTAX = /^[^\\s@]+@[^\\s@]+\\.[a-zA-Z]{2,}$/;
+
+function recipientFromEmail(rawEmail: string): Recipient | null {
+  const email = rawEmail.trim().replace(/^[<("'\\s]+|[>),;."'\\s]+$/g, "").toLowerCase();
+  if (!email || !EMAIL_SYNTAX.test(email)) return null;
+
+  const [handle = "", domain = ""] = email.split("@");
+  const firstName = handle.split(/[._-]/)[0] || "there";
+  const name = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+  const domainName = domain.split(".")[0] ?? "";
+  const company = domainName.charAt(0).toUpperCase() + domainName.slice(1);
+  const isTypoDomain = KNOWN_TYPO_DOMAINS.has(domain);
+
+  return {
+    email,
+    name,
+    company,
+    status: isTypoDomain ? "risky" : "valid",
+    reason: isTypoDomain ? `Known invalid domain typo (${domain})` : "Valid email syntax",
+  };
+}
+
 export function parseList(raw: string): Recipient[] {
-  const found = raw.match(/[^\s,;<>"']+@[^\s,;<>"']+/g) ?? [];
+  const found = raw.match(/[^\\s,;<>"']+@[^\\s,;<>"']+/g) ?? [];
   const seen = new Set<string>();
-  const out: Recipient[] = [];
-  for (const rawEmail of found) {
-    const email = rawEmail.replace(/[.,;]+$/, "").toLowerCase();
-    const isDuplicate = seen.has(email);
-    seen.add(email);
+  const recipients: Recipient[] = [];
 
-    const handle = email.split("@")[0] ?? "";
-    const domain = email.split("@")[1] ?? "";
-    const name =
-      (handle.split(/[._-]/)[0] ?? "there").charAt(0).toUpperCase() +
-      (handle.split(/[._-]/)[0] ?? "there").slice(1);
-    const company =
-      (domain.split(".")[0] ?? "").charAt(0).toUpperCase() + (domain.split(".")[0] ?? "").slice(1);
-
-    const formatOk = /^[^\s@]+@[^\s@.]+\.[a-z]{2,}$/i.test(email);
-    const isTypoDomain = KNOWN_TYPO_DOMAINS.has(domain);
-
-    const status = isDuplicate ? "duplicate" : ((!formatOk || isTypoDomain) ? "risky" : "valid");
-    const reason = isDuplicate
-      ? "This email address appears more than once in the imported list; quarantined before sending."
-      : !formatOk
-        ? "Malformed address syntax"
-        : isTypoDomain
-          ? `Known invalid domain typo (${domain})`
-          : "Valid format; ready for sending";
-
-    out.push({
-      email,
-      name,
-      company,
-      status,
-      reason,
-    });
+  for (const candidate of found) {
+    const recipient = recipientFromEmail(candidate);
+    if (!recipient) continue;
+    const normalized = recipient.email.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    recipients.push(recipient);
   }
-  return out;
+
+  return recipients;
 }
 
 /** Parse a plain-text or CSV recipient file, retaining name/company columns when supplied. */
 export function parseRecipientFileText(raw: string): Recipient[] {
-  const source = raw.replace(/^\uFEFF/, "").trim();
+  const source = raw.replace(/^\\uFEFF/, "").trim();
   if (!source) return [];
-  const firstLine = source.split(/\r?\n/, 1)[0] ?? "";
-  const delimiter = firstLine.includes("\t") ? "\t" : firstLine.includes(";") && !firstLine.includes(",") ? ";" : ",";
+
+  const firstLine = source.split(/\\r?\\n/, 1)[0] ?? "";
+  const delimiter = firstLine.includes("\\t") ? "\\t" : firstLine.includes(";") && !firstLine.includes(",") ? ";" : ",";
   const parseRow = (line: string): string[] => {
     const cells: string[] = [];
     let value = "";
@@ -175,30 +175,33 @@ export function parseRecipientFileText(raw: string): Recipient[] {
     cells.push(value.trim());
     return cells;
   };
+
   const header = parseRow(firstLine).map(value => value.toLowerCase().replace(/[^a-z0-9]/g, ""));
-  const emailIndex = header.findIndex(value => ["email", "emailaddress", "e-mail", "mail"].includes(value));
+  const emailIndex = header.findIndex(value => ["email", "emailaddress", "mail"].includes(value));
   if (emailIndex < 0) return parseList(source);
+
   const nameIndex = header.findIndex(value => ["name", "fullname", "contactname", "firstandlastname"].includes(value));
   const companyIndex = header.findIndex(value => ["company", "organization", "organisation", "business"].includes(value));
   const seen = new Set<string>();
   const result: Recipient[] = [];
-  for (const line of source.split(/\r?\n/).slice(1)) {
+
+  for (const line of source.split(/\\r?\\n/).slice(1)) {
     if (!line.trim()) continue;
     const cells = parseRow(line);
-    const email = (cells[emailIndex] ?? "").trim().toLowerCase();
-    if (!email) continue;
-    const isDuplicate = seen.has(email);
-    const validated = parseList(email)[0];
-    if (!validated) continue;
-    seen.add(email);
+    const recipient = recipientFromEmail(cells[emailIndex] ?? "");
+    if (!recipient) continue;
+
+    const normalized = recipient.email.toLowerCase();
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+
     result.push({
-      ...validated,
-      status: isDuplicate ? "duplicate" : validated.status,
-      reason: isDuplicate ? "This email address appears more than once in the imported file; quarantined before sending." : validated.reason,
-      name: nameIndex >= 0 && cells[nameIndex] ? cells[nameIndex]! : validated.name,
-      company: companyIndex >= 0 && cells[companyIndex] ? cells[companyIndex]! : validated.company,
+      ...recipient,
+      name: nameIndex >= 0 && cells[nameIndex] ? cells[nameIndex]! : recipient.name,
+      company: companyIndex >= 0 && cells[companyIndex] ? cells[companyIndex]! : recipient.company,
     });
   }
+
   return result;
 }
 
