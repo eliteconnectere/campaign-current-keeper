@@ -2990,7 +2990,45 @@ function Workspace() {
                   </div>
                 )}
 
-                {menuView === "subscription" && <div className="animate-fade-in"><p>Subscription</p></div>}
+                {menuView === "subscription" && (
+                  <div className="animate-fade-in">
+                    <button
+                      onClick={() => setMenuView("settings")}
+                      className="flex w-full items-center gap-2 px-3.5 py-2.5"
+                    >
+                      <ChevronLeft className="size-3.5 text-brand" />
+                      <span className="label-caps">Subscription</span>
+                    </button>
+                    <div className="space-y-2 border-t border-line px-3.5 py-3">
+                      <p className="text-[12.5px] font-semibold text-ink">
+                        {premium
+                          ? "Premium is active on this account."
+                          : entitlements?.trialActive
+                            ? "You're on the free trial."
+                            : "You're on the free plan."}
+                      </p>
+                      {entitlements && !premium && (
+                        <>
+                          <p className="text-[11.5px] leading-snug text-ink-soft">
+                            Sending delays start at 3 seconds to account for Gmail delivery time.
+                          </p>
+                          {entitlements.promoActive && (
+                            <Countdown endsAt={entitlements.promoEndsAt} />
+                          )}
+                          <button
+                            onClick={() => {
+                              setPanel("none");
+                              setPremiumReason("Unlock the full Elite Connectere workspace.");
+                            }}
+                            className="w-full rounded-full bg-brand py-2 text-[12.5px] font-semibold text-white"
+                          >
+                            See premium plans
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </>
