@@ -4439,7 +4439,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
                 totalRecipients: recipients.length,
                 generatedRecipients: generated.length,
                 sentCount,
-                remaining: Math.max(0, generated.length - sentCount),
+                remaining: activeServerCampaignId ? pending : Math.max(0, generated.length - sentCount),
                 selectedRange: { from, to },
                 serverCampaigns: persistedCampaignWorkspace.campaigns.map((campaign) => ({
                   id: campaign.id, name: campaign.name, status: campaign.status,
@@ -4533,7 +4533,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           initialTab={radarTab}
           onClose={() => setRadarOpen(false)}
           sentCount={sentCount}
-          totalCount={generated.length}
+          totalCount={activeServerCampaignId ? serverCampaignCounts.total : generated.length}
           pacingSeconds={delay}
           onApplyTemplate={(tpl) => {
             setTplA(tpl);
