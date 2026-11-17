@@ -1955,162 +1955,73 @@ function removeCategory(kind: "duplicate" | "risky") {
     if (!keepActive) activeCampaignIdRef.current = null;
   }
 
-  async function startCampaign(skipPace = false): Promise<boolean> {
-    // Prime Web Audio synchronously in the Execute/Approve tap, before any async work.
+  async function startCampaign(): Promise<boolean> {
     unlockAudioFromGesture();
-    if (engine === "sending") {
-      toast.info("Elite Engine is already running; no second campaign was started.");
-      return false;
-    }
-    if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
-      setOneSecAsk(true);
-      return false;
-    }
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("You're offline — reconnect to start a campaign.");
-      return false;
-    }
-    if (mode === "elite" && !canSendElite) {
-      guideTo(
-        "profiles",
-        profiles.length === 0
-          ? "Connect a Google profile — Elite Engine sends from your own Gmail."
-          : "Every connected profile has reached its limit. Connect another to continue.",
-      );
-      return false;
-    }
-    if (!validated || generated.length === 0) {
-      guideTo("recipients", "Validate your list first — that is what builds the campaign.");
-      return false;
-    }
-    if (!cleanupHandled && (counts.duplicate > 0 || counts.risky > 0)) {
-      // Auto-quarantine bad rows and start Elite on safe contacts — no popup at send start
-      removeStatuses(["duplicate", "risky"]);
-      setCleanupHandled(true);
-      if (counts.risky > 0 || counts.duplicate > 0) {
-        toast.info(
-          `Saved ${counts.risky + counts.duplicate} risky/duplicate lead(s) to Vault. Sending safe contacts on Elite…`
-        );
-      }
-    }
-
-    // Clear reasons when campaign cannot start
-    // Only the current generated list "sent" flags block a continue.
-    // Lifetime history is for stats — Reset clears it. Server still dedupes exact same message.
-    const doneEmails = new Set(
-      generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase())
-    );
-    const inRange = generated.filter((g) => g.id >= from && g.id <= to);
-    if (inRange.length === 0) {
-      toast.error("No recipients found in selected range.");
-      return false;
-    }
-    const unsentInRange = inRange.filter((g) => !doneEmails.has(g.email.trim().toLowerCase()));
-    if (unsentInRange.length === 0) {
-      toast.info("This run already finished every row in the range. Tap Reset, rebuild the list, then Execute for a new campaign.");
-      showErrorGuide({
-        title: "This run is finished",
-        body: "Every address in this range was already marked sent in the current list. Reset clears those marks so you can start a new campaign (new message is allowed; the server still blocks the exact same message only).",
-        steps: [
-          "Tap Reset (clears Sent marks and the old lock list).",
-          "Paste or load your list again if the list was cleared.",
-          "Update subject/body if this is a new outreach.",
-          "Tap Execute Campaign.",
-        ],
-      });
-      return false;
-    }
-
-    
-    // Elite content safety — block clear phishing / bank-fraud copy before Engine sends
-    {
-      const subj = (tplA?.subject || tplB?.subject || "").toString();
-      const body = (tplA?.body || tplB?.body || "").toString();
-      const hit = scanCampaignContent(subj, body);
-      if (hit.blocked) {
-        toast.error(safetyBlockMessage(hit));
-        log(safetyBlockMessage(hit), "campaignPaused");
-        return false;
-      }
-    }
-
-    // Create an execution ledger only after readiness and safety checks pass.
-    const riskyEmails = new Set(recipients.filter(r => r.status === "risky").map(r => r.email.trim().toLowerCase()));
-    const runId = crypto.randomUUID();
-    const runStartedAt = new Date().toISOString();
-    const initialSkipped: CampaignRecipientResult[] = inRange
-      .filter(g => doneEmails.has(g.email.trim().toLowerCase()) || riskyEmails.has(g.email.trim().toLowerCase()))
-      .map(g => ({ email: g.email, ...(g.name ? { name: g.name } : {}), status: "skipped" as const,
-        reason: doneEmails.has(g.email.trim().toLowerCase()) ? "Already marked sent in this workspace." : "Recipient is quarantined as risky.", at: runStartedAt }));
-    if (activeCampaignIdRef.current) {
-      const resumeId = activeCampaignIdRef.current;
-      setCampaignRuns(previous => previous.map(run => {
-        if (run.id !== resumeId) return run;
-        const nextRun = { ...run, status: "running" as const };
-        delete nextRun.finishedAt;
-        return nextRun;
-      }));
-    } else {
-      activeCampaignIdRef.current = runId;
-      setCampaignRuns(previous => [{ id: runId, startedAt: runStartedAt, mode: mode === "elite" ? ("elite" as const) : ("standard" as const), status: "running" as const,
-        targetCount: inRange.length, sentCount: 0, skippedCount: initialSkipped.length, failedCount: 0,
-        handedOffCount: 0, recipients: initialSkipped }, ...previous].slice(0, 5));
-    }
-
-    // Manual execution stays in Elite Engine. Rex approval is only for campaigns explicitly prepared in Rex.
-    setAutoResumePending(false);
-    setEngine("sending");
+    if (!uid) { toast.error("Sign in before starting a campaign."); return false; }
+    if (engine === "sending") { toast.info("This campaign is already running on the server."); return false; }
+    if (!navigator.onLine) { toast.error("Reconnect to create or control the server campaign."); return false; }
     try {
-      if (uid) localStorage.setItem(campaignResumeKey(uid), "1");
-      localStorage.removeItem("ec-engine-resume");
-    } catch {}
-    setScout(true);
-    log("Campaign started — Elite Engine is now sending.", "campaignStarted");
-    return true;
-  }
-
-  // each new campaign asks again about the 1-second pace
-  useEffect(() => {
-    if (engine !== "sending" && engine !== "paused") oneSecOkRef.current = false;
-  }, [engine]);
-
-  function pauseCampaign(): boolean {
-    if (engine !== "sending") return false;
-    setAutoResumePending(false);
-    if (uid) { try { localStorage.removeItem(campaignResumeKey(uid)); } catch {} }
-    setEngine("paused");
-    setScout(false);
-    finishCampaignRun("paused", true);
-    log("Campaign paused", "campaignPaused");
-    return true;
-  }
-
-  // When the 30-minute Erase Data countdown expires, stop any live sending
-  // and prevent a background/reload auto-resume until the owner chooses YES or NO.
-  useEffect(() => {
-    if (!eraseRequest || new Date(eraseRequest.expires_at).getTime() > eraseNow || engine !== "sending") return;
-    setAutoResumePending(false);
-    if (uid) {
-      try { localStorage.removeItem(campaignResumeKey(uid)); } catch {}
+      if (activeServerCampaignId && engine === "paused") {
+        await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "resume" } });
+        setEngine("sending"); setScout(true); setServerCampaignStatus("queued");
+        toast.success("Campaign resumed on the server.");
+        return true;
+      }
+      if (!validated || generated.length === 0) { guideTo("recipients", "Validate your list first — this builds the server campaign."); return false; }
+      if (!canSendElite) { guideTo("profiles", "Connect a Google account with Gmail send permission before executing."); return false; }
+      const inRange = generated.filter((row) => row.id >= from && row.id <= to);
+      const seen = new Set<string>();
+      const recipientsForQueue = inRange.flatMap((row) => {
+        const email = row.email.trim().toLowerCase();
+        if (!/^[^\\s@]+@[^\\s@]+\\.[a-zA-Z]{2,}$/.test(email) || seen.has(email)) return [];
+        if (!row.subject.trim() || !row.body.trim()) return [];
+        seen.add(email);
+        return [{ email, name: row.name, subject: row.subject, body: row.body }];
+      });
+      if (recipientsForQueue.length === 0) { toast.error("No unique, valid recipients with a complete subject and message remain in the selected range."); return false; }
+      const baseSubject = tplA.subject.trim() || tplB.subject.trim() || recipientsForQueue[0]!.subject;
+      const baseBody = tplA.body.trim() || tplB.body.trim() || recipientsForQueue[0]!.body;
+      const queued = await enqueueCampaign({ data: {
+        name: baseSubject.slice(0, 120) || "Campaign", subject: baseSubject, body: baseBody,
+        delaySeconds: Math.min(8, Math.max(3, delay)), recipients: recipientsForQueue,
+      } });
+      setActiveServerCampaignId(queued.campaignId);
+      setServerCampaignStatus(queued.status);
+      setEngine(queued.status === "paused" ? "paused" : "sending");
+      setScout(queued.status !== "paused");
+      setNextInSec(delay);
+      log("Campaign saved to Supabase: " + recipientsForQueue.length + " unique recipients. The server worker now owns delivery.", "campaignStarted");
+      toast.success("Campaign queued — server delivery continues independently of this tab.", {
+        description: queued.dispatch?.dispatched ? "The worker was kicked immediately." : "The persistent worker will pick it up on its next poll.",
+      });
+      return true;
+    } catch (error) {
+      console.error("Could not queue campaign", error);
+      toast.error(error instanceof Error ? error.message : "Campaign could not be added to the server queue.");
+      return false;
     }
-    try { localStorage.removeItem("ec-engine-resume"); } catch {}
-    setEngine("paused");
-    setScout(false);
-    finishCampaignRun("paused", true);
-    log("Campaign paused because the Erase Data countdown reached its final decision.");
-  }, [eraseRequest?.expires_at, eraseNow, engine, uid, log, finishCampaignRun]);
-
-  function stopCampaign(): boolean {
-    if (engine !== "sending" && engine !== "paused") return false;
-    setAutoResumePending(false);
-    if (uid) { try { localStorage.removeItem(campaignResumeKey(uid)); } catch {} }
-    setEngine("idle");
-    setScout(false);
-    finishCampaignRun("stopped");
-    log("Campaign stopped — remaining unsent rows stay available.", "campaignPaused");
-    return true;
   }
 
+  async function pauseCampaign(): Promise<boolean> {
+    if (!activeServerCampaignId || engine !== "sending") return false;
+    try {
+      await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "pause" } });
+      setEngine("paused"); setScout(false); setServerCampaignStatus("paused");
+      log("Campaign paused in Supabase. Already-sent recipients remain recorded.", "campaignPaused");
+      toast.success("Campaign paused.");
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Campaign could not be paused."); return false; }
+  }
+
+  async function stopCampaign(): Promise<boolean> {
+    if (!activeServerCampaignId || (engine !== "sending" && engine !== "paused")) return false;
+    try {
+      await controlRexManagedCampaign({ data: { campaignId: activeServerCampaignId, action: "stop" } });
+      setEngine("idle"); setScout(false); setServerCampaignStatus("cancelled");
+      toast.success("Campaign stopped. Sent recipients remain recorded; unsent recipients were not sent.");
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Campaign could not be stopped."); return false; }
+  }
   const shownGenerated = generated.filter((g) =>
     genTab === "sent" ? g.sent : genTab === "pending" ? !g.sent : !g.sent,
   );
