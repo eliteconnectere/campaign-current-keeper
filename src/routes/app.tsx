@@ -3181,24 +3181,20 @@ function Workspace() {
 
           <div className="mt-2.5 animate-fade-in">
             <div className="flex items-center gap-1 rounded-full border border-line bg-soft p-0.5">
-              {(["valid", "risky"] as const).map((key) => {
-                const count = key === "valid" ? counts.valid : counts.risky;
-                const Icon = key === "valid" ? ShieldCheck : AlertTriangle;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setTab(key)}
-                    className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${
-                      tab === key ? "bg-brand text-white" : "text-ink"
-                    }`}
-                  >
-                    <Icon className="size-3.5 shrink-0" /> {key}
-                    <span className={`rounded-full px-1 py-px ${tab === key ? "bg-white/20" : "bg-white"}`}>
-                      {count}
-                    </span>
-                  </button>
-                );
-              })}
+              <button
+                onClick={() => setTab("valid")}
+                className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${tab === "valid" ? "bg-brand text-white" : "text-ink"}`}
+              >
+                <ShieldCheck className="size-3.5 shrink-0" /> valid
+                <span className={`rounded-full px-1 py-px ${tab === "valid" ? "bg-white/20" : "bg-white"}`}>{counts.valid}</span>
+              </button>
+              <button
+                onClick={() => setTab("risky")}
+                className={`flex flex-1 select-none items-center justify-center gap-1 rounded-full px-1.5 py-1.5 text-[11.5px] font-medium capitalize transition-colors ${tab === "risky" ? "bg-brand text-white" : "text-ink"}`}
+              >
+                <AlertTriangle className="size-3.5 shrink-0" /> risky
+                <span className={`rounded-full px-1 py-px ${tab === "risky" ? "bg-white/20" : "bg-white"}`}>{counts.risky}</span>
+              </button>
             </div>
 
             <div className="mt-2 max-h-[168px] divide-y divide-line overflow-y-auto rounded-xl border border-line">
