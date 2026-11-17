@@ -199,13 +199,49 @@ export const getCampaignExecutionProgress = createServerFn({ method: "GET" })
       .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
     if (error) throw error;
     if (!campaign) throw new Error("Campaign not found in your account.");
-    const { data: sentRows, error: sentError } = await db.from("campaign_recipients")
-      .select("email").eq("campaign_id", data.campaignId).eq("status", "sent")
-      .order("created_at", { ascending: true }).limit(5000);
-    if (sentError) throw sentError;
+    // The recipient rows are the source of truth. The campaign counters are
+    // denormalized worker snapshots and can lag briefly while a batch is being
+    // processed; using them directly made the UI show impossible All/Pending
+    // combinations and stale progress after refresh.
+    const countStatus = (status?: string) => {
+      let query = db.from("campaign_recipients")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", data.campaignId);
+      if (status) query = query.eq("status", status);
+      return query;
+    };
+    const [totalResult, sentResult, pendingResult, sendingResult, failedResult, sentRowsResult] = await Promise.all([
+      countStatus(),
+      countStatus("sent"),
+      countStatus("pending"),
+      countStatus("sending"),
+      countStatus("failed"),
+      db.from("campaign_recipients")
+        .select("email").eq("campaign_id", data.campaignId).eq("status", "sent")
+        .order("created_at", { ascending: true }).limit(10000),
+    ]);
+    for (const result of [totalResult, sentResult, pendingResult, sendingResult, failedResult, sentRowsResult]) {
+      if (result.error) throw result.error;
+    }
+    const actualTotal = Number(totalResult.count ?? 0);
+    const actualSent = Number(sentResult.count ?? 0);
+    const actualPending = Number(pendingResult.count ?? 0);
+    const actualSending = Number(sendingResult.count ?? 0);
+    const actualFailed = Number(failedResult.count ?? 0);
     return {
-      campaign,
-      sentEmails: (sentRows ?? []).map((row: { email: string }) => String(row.email).trim().toLowerCase()),
+      campaign: {
+        ...campaign,
+        total_recipients: actualTotal,
+        sent_count: actualSent,
+        failed_count: actualFailed,
+        pending_count: actualPending,
+        sending_count: actualSending,
+      },
+      countsSource: "campaign_recipients",
+      countersReconciled: actualTotal !== Number(campaign.total_recipients ?? 0)
+        || actualSent !== Number(campaign.sent_count ?? 0)
+        || actualFailed !== Number(campaign.failed_count ?? 0),
+      sentEmails: (sentRowsResult.data ?? []).map((row: { email: string }) => String(row.email).trim().toLowerCase()),
     };
   });
 
