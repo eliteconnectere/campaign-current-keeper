@@ -55,6 +55,7 @@ while (true) {
       method: "GET",
       headers: {
         Authorization: `Bearer ${secret}`,
+        "x-campaign-worker-secret": secret,
         Accept: "application/json"
       },
       signal: AbortSignal.timeout(timeoutMs)
