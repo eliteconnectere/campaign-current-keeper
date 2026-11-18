@@ -923,17 +923,17 @@ export function EliteAssist({
       // workspace edit. Handle it deterministically so a model reply cannot
       // incorrectly insist that a subject is mandatory. The message body is
       // copied from the immediately preceding Rex draft and left unchanged.
-      const explicitlyRemoveSubject = /\\b(?:remove|delete|drop|omit|clear|take out)\\s+(?:the\\s+)?subject\\b|\\b(?:without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\\b/i.test(content);
+      const explicitlyRemoveSubject = /\b(?:remove|delete|drop|omit|clear|take out)\s+(?:the\s+)?subject\b|\b(?:without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i.test(content);
       if (explicitlyRemoveSubject && onApplyCampaignTemplate) {
         const previousDraft = [...msgs].reverse().find(message =>
-          message.role === "assistant" && /(?:\\*\\*Subject:\\*\\*|Subject:)\\s*[^\\n]*/i.test(message.content)
+          message.role === "assistant" && /(?:\*\*Subject:\*\*|Subject:)\s*[^\n]*/i.test(message.content)
         );
-        const subjectMatch = previousDraft?.content.match(/(?:\\*\\*Subject:\\*\\*|Subject:)\\s*[^\\n]*\\n+/i);
+        const subjectMatch = previousDraft?.content.match(/(?:\*\*Subject:\*\*|Subject:)\s*[^\n]*\n+/i);
         if (previousDraft && subjectMatch?.index !== undefined) {
-          const slot = /Template\\s+B/i.test(previousDraft.content) ? "B" : "A";
+          const slot = /Template\s+B/i.test(previousDraft.content) ? "B" : "A";
           let body = previousDraft.content.slice(subjectMatch.index + subjectMatch[0].length).trim();
-          body = body.replace(/\\n+Applied to Template [AB] in your workspace\\. Nothing was sent\\.?\\s*$/i, "").trim();
-          body = body.replace(/\\n+Applied to Template [AB]\\.?\\s*$/i, "").trim();
+          body = body.replace(/\n+Applied to Template [AB] in your workspace\. Nothing was sent\.?\s*$/i, "").trim();
+          body = body.replace(/\n+Applied to Template [AB]\.?\s*$/i, "").trim();
           if (body) {
             await persistMessage("user", content);
             onApplyCampaignTemplate(slot, "", body);
