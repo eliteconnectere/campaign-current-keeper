@@ -2436,6 +2436,13 @@ function removeCategory(kind: "duplicate" | "risky") {
       return false;
     }
 
+    if (currentGenerated.length > to) {
+      const confirmed = window.confirm(
+        `You have ${currentGenerated.length.toLocaleString()} recipients, but your execution range ends at #${to.toLocaleString()}. This campaign will stop at #${to.toLocaleString()} and the remaining recipients will not be included. Continue with this range?`
+      );
+      if (!confirmed) return false;
+    }
+
     if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
       setOneSecAsk(true);
       return false;
