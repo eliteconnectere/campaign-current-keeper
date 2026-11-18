@@ -19,7 +19,6 @@ export type EliteRadarHubProps = {
 };
 
 const SNIPPET_CATEGORIES = [
-  { id: "professional", label: "Professional" },
   { id: "direct", label: "Direct" },
   { id: "friendly", label: "Friendly" },
   { id: "partnership", label: "Partnership" },
