@@ -153,6 +153,7 @@ export async function appendLocalRexConversationMessages(
     const now = new Date().toISOString();
     const id = conversationId || makeId();
     const done = transactionDone(tx);
+    void done.catch(() => undefined);
     const read = store.get(id);
     const result = await new Promise<StoredConversation>((resolve, reject) => {
       read.onsuccess = () => {
@@ -177,7 +178,6 @@ export async function appendLocalRexConversationMessages(
     await done;
     return { conversationId: result.id, stored: clean.length };
   } catch (error) {
-    try { await done.catch(() => undefined); } catch {}
     throw error;
   } finally { db.close(); }
 }
