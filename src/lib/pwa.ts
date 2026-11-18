@@ -30,6 +30,32 @@ export async function registerAppWorker() {
   }
   try {
     await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    // Save the homepage and workspace HTML in the same cache used by the
+    // Workbox NetworkFirst navigation handler, so Safari can reopen them offline.
+    const cacheNavigationShells = async () => {
+      if (!navigator.onLine || !("caches" in window)) return;
+      try {
+        const cache = await caches.open("ec-pages");
+        for (const path of ["/", "/app"]) {
+          const url = new URL(path, window.location.origin);
+          const response = await fetch(url.toString(), {
+            method: "GET",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { Accept: "text/html" },
+          });
+          const contentType = response.headers.get("content-type") ?? "";
+          if (!response.ok || response.redirected || !contentType.includes("text/html")) continue;
+          await cache.put(new Request(url.toString(), { method: "GET" }), response.clone());
+        }
+      } catch {
+        // A failed pre-cache must never prevent the online app from opening.
+      }
+    };
+    await navigator.serviceWorker.ready;
+    await cacheNavigationShells();
+    window.addEventListener("online", () => void cacheNavigationShells());
+    window.addEventListener("pageshow", () => void cacheNavigationShells());
   } catch {
     /* installable app is optional */
   }
