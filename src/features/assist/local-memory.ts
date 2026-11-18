@@ -177,17 +177,11 @@ export async function appendLocalRexConversationMessages(
     await done;
     return { conversationId: result.id, stored: clean.length };
   } catch (error) {
-    try { txAbortSafe(db); } catch {}
+    try { await done.catch(() => undefined); } catch {}
     throw error;
   } finally { db.close(); }
 }
 
-function txAbortSafe(db: IDBDatabase) {
-  if (db.objectStoreNames.contains(CONVERSATIONS)) {
-    // Closing the database aborts any still-open transaction without deleting data.
-    db.close();
-  }
-}
 
 export async function saveLocalRexMemoryEntry(userId: string, category: string, content: string): Promise<RexLocalMemoryEntry> {
   const cleanContent = String(content ?? "").trim().slice(0, 4000);
