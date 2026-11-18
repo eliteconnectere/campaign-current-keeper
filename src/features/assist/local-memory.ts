@@ -191,6 +191,24 @@ export async function listLocalRexConversations(userId: string): Promise<{ conve
   } finally { db.close(); }
 }
 
+export async function clearLocalRexMemory(userId: string): Promise<void> {
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction([CONVERSATIONS, ENTRIES], "readwrite");
+    const done = transactionDone(tx);
+    for (const storeName of [CONVERSATIONS, ENTRIES]) {
+      const store = tx.objectStore(storeName);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        for (const row of request.result as Array<{ userId?: string } & { id?: string }>) {
+          if (row.userId === userId && row.id) store.delete(row.id);
+        }
+      };
+    }
+    await done;
+  } finally { db.close(); }
+}
+
 export async function deleteLocalRexConversation(userId: string, conversationId: string): Promise<void> {
   const db = await openMemoryDb();
   try {
