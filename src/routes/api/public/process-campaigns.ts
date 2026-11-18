@@ -123,7 +123,7 @@ function base64Url(value: string) {
 function rawEmail(to: string, subject: string, body: string) {
   return base64Url([
     `To: ${to}`,
-    `Subject: ${subject.replace(/[\r\n]/g, " ").slice(0, 500)}`,
+    ...(subject.trim() ? [`Subject: ${subject.replace(/[\r\n]/g, " ").slice(0, 500)}`] : []),
     "MIME-Version: 1.0",
     'Content-Type: text/plain; charset="UTF-8"',
     "",
