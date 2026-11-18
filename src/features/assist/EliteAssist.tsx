@@ -923,7 +923,7 @@ export function EliteAssist({
       // workspace edit. Handle it deterministically so a model reply cannot
       // incorrectly insist that a subject is mandatory. The message body is
       // copied from the immediately preceding Rex draft and left unchanged.
-      const explicitSubjectRemoval = /\b(?:remove|delete|drop|omit|clear|take out)\s+(?:the\s+)?subject\b|\b(?:without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i;
+      const explicitSubjectRemoval = /\b(?:remove|delete|drop|omit|clear|take out)\s+(?:the\s+)?subject\b|\b(?:without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject|(?:i\s+)?(?:do not|don['’]?t|dont)\s+want\s+(?:any\s+)?(?:email\s+)?subject)\b|\bsubject\b.{0,40}\bcompletely blank\b|\bcompletely blank\b.{0,40}\bsubject\b/i;
       const explicitlyRemoveSubject = explicitSubjectRemoval.test(content);
       const affirmativeReply = /^(?:yes|yeah|yep|correct|exactly|please do|do that|sure)[.!\s]*$/i.test(content);
       const lastAssistantAskedSubjectChoice = [...msgs].reverse().find(message => message.role === "assistant")?.content
@@ -1417,7 +1417,7 @@ export function EliteAssist({
         try {
           const payload = JSON.parse(decodeURIComponent(snippetCreateNow[1])) as { title?: unknown; subject?: unknown; body?: unknown; category?: unknown };
           const title = typeof payload["title"] === "string" ? payload["title"].trim().slice(0, 120) : "";
-          const subject = /\b(without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i.test(content) ? "" : (typeof payload.subject === "string" ? payload.subject.trim().slice(0, 200) : "");
+          const subject = /\b(without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject|(?:i\s+)?(?:do not|don['’]?t|dont)\s+want\s+(?:any\s+)?(?:email\s+)?subject)\b|\bsubject\b.{0,40}\bcompletely blank\b|\bcompletely blank\b.{0,40}\bsubject\b/i.test(content) ? "" : (typeof payload.subject === "string" ? payload.subject.slice(0, 200) : "");
           const body = typeof payload["body"] === "string" ? payload["body"].trim().slice(0, 4000) : "";
           const categories = ["direct","friendly","partnership","followup","value"] as const;
           const category = typeof payload["category"] === "string" && categories.includes(payload["category"] as typeof categories[number]) ? payload["category"] : "friendly";
