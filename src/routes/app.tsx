@@ -407,11 +407,7 @@ function TemplateEditor({
   };
 
   const subjectChips = ["Quick question", "Partnership", "Exclusive offer"];
-  const toneChips: [string, () => void][] = [
-    ["Professional", () => loadSavedSnippet("Professional")],
-    ["Casual", () => loadSavedSnippet("Casual")],
-    ["Invitation", () => loadSavedSnippet("Invitation")],
-  ];
+  const toneChips: [string, () => void][] = [];
   return (
     <div className="rounded-[14px] border border-line p-3">
       <div className="flex items-center justify-between">
@@ -430,14 +426,14 @@ function TemplateEditor({
       </div>
       <input
         value={value.subject}
-        placeholder="Write your campaign subject..."
+        placeholder="Write your campaign subject (optional)..."
         maxLength={200}
         onChange={(e) => onChange({ ...value, subject: e.target.value })}
         className="mt-1.5 w-full rounded-xl border border-line px-3 py-2 text-[12.5px] text-ink outline-none focus:border-ink/30"
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {subjectChips.map((c) => (
-          <Chip key={c} onClick={() => loadSavedSnippet(c)}>
+          <Chip key={c} onClick={() => onChange({ ...value, subject: c })}>
             {c}
           </Chip>
         ))}
@@ -1483,13 +1479,13 @@ function Workspace() {
   const pending = validated ? Math.max(generated.length - sentCount, 0) : 0;
 
   function buildGenerated(list: Recipient[]) {
-    const hasA = Boolean(tplA.subject.trim() && tplA.body.trim());
-    const hasB = Boolean(tplB.subject.trim() && tplB.body.trim());
+    const hasA = Boolean(tplA.body.trim());
+    const hasB = Boolean(tplB.body.trim());
     const useRotation = twoWay && hasA && hasB;
     return list.map((r, i) => {
       const slot: "A" | "B" = useRotation ? (i % 2 === 1 ? "B" : "A") : (twoWay && !hasA && hasB ? "B" : "A");
       const tpl = slot === "B" ? tplB : tplA;
-      const complete = Boolean(tpl.subject.trim() && tpl.body.trim());
+      const complete = Boolean(tpl.body.trim());
       return {
         id: i + 1,
         email: r.email,
@@ -2199,15 +2195,15 @@ function removeCategory(kind: "duplicate" | "risky") {
     const seen = new Set<string>();
     const pending = sourceRows.filter((g) => {
       const email = g.email.trim().toLowerCase();
-      const completeMessage = Boolean(g.subject.trim() && g.body.trim());
+      const completeMessage = Boolean(g.body.trim());
       if (!email || !completeMessage || g.id < from || g.id > to || sent.has(email) || blocked.has(email) || seen.has(email)) return false;
       seen.add(email);
       return true;
     });
     if (pending.length === 0) {
-      const hasA = Boolean(tplA.subject.trim() && tplA.body.trim());
-      const hasB = Boolean(tplB.subject.trim() && tplB.body.trim());
-      if (!hasA && !hasB) throw new Error("No campaign message is ready. Add both a subject and message body to Template A or Template B before preparing a campaign.");
+      const hasA = Boolean(tplA.body.trim());
+      const hasB = Boolean(tplB.body.trim());
+      if (!hasA && !hasB) throw new Error("No campaign message is ready. Add a message body to Template A or Template B. The subject is optional.");
       throw new Error("There are no unsent, safe recipients with a complete message in the selected range.");
     }
     const firstPending = pending[0];
@@ -2374,14 +2370,14 @@ function removeCategory(kind: "duplicate" | "risky") {
     setGenerated(currentGenerated);
 
     const selectedPreview = currentGenerated.filter((g) => g.id >= from && g.id <= to && !g.sent);
-    const incompleteMessages = selectedPreview.filter((g) => !g.subject.trim() || !g.body.trim());
+    const incompleteMessages = selectedPreview.filter((g) => !g.body.trim());
     if (selectedPreview.length === 0) {
       toast.info("There are no unsent recipients in the selected range.");
       return false;
     }
     if (incompleteMessages.length > 0) {
       toast.error("Your campaign message isn't ready yet.", {
-        description: "Write a subject and message, or import a saved Snippet using one of the buttons below. Every selected recipient needs a complete message before execution.",
+        description: "Write a message body or load a saved Snippet. A subject is optional; every selected recipient needs a message body before execution.",
         duration: 8000,
       });
       return false;
