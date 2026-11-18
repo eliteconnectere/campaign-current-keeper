@@ -604,9 +604,9 @@ function Workspace() {
   const oneSecOkRef = useRef(false);
   delayRef.current = delay;
   const [from, setFrom] = useState(1);
-  const [to, setTo] = useState(50);
-  const [defaultScope, setDefaultScope] = useState(50);
-  const [scope, setScope] = useState(50);
+  const [to, setTo] = useState(1000);
+  const [defaultScope, setDefaultScope] = useState(1000);
+  const [scope, setScope] = useState(1000);
 
   const [profiles, setProfiles] = useState<GmailProfile[]>([]);
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -1205,9 +1205,9 @@ function Workspace() {
         if (snapshot.genTab) setGenTab(snapshot.genTab as 'all' | 'sent' | 'pending');
         if (snapshot.delay) setDelay(snapshot.delay >= 3 && snapshot.delay <= 8 ? snapshot.delay : 5);
         if (snapshot.from) setFrom(snapshot.from);
-        if (snapshot.to) setTo(snapshot.to);
-        if (snapshot.scope) setScope(snapshot.scope);
-        if (snapshot.defaultScope) setDefaultScope(snapshot.defaultScope);
+        if (snapshot.to) setTo(snapshot.to === 50 ? 1000 : snapshot.to);
+        if (snapshot.scope) setScope(snapshot.scope === 50 ? 1000 : snapshot.scope);
+        if (snapshot.defaultScope) setDefaultScope(snapshot.defaultScope === 50 ? 1000 : snapshot.defaultScope);
         if (snapshot.planner) setPlanner(snapshot.planner);
         if (snapshot.notes?.length) setNotes(snapshot.notes);
         if (snapshot.smartFillHistory) setSmartFillHistory(snapshot.smartFillHistory);
@@ -1593,7 +1593,7 @@ function Workspace() {
   const firstPending = nextGenerated.find((g) => !g.sent)?.id ?? 1;
   const resumeFromPending = alreadySent.size > 0 && nextGenerated.some((g) => g.sent);
   setFrom(resumeFromPending ? firstPending : 1);
-  setTo(Math.max(resumeFromPending ? firstPending : 1, Math.min(list.length, (resumeFromPending ? firstPending - 1 : 0) + scope)));
+  setTo(Math.max(resumeFromPending ? firstPending : 1, Math.min(list.length, (resumeFromPending ? firstPending - 1 : 0) + Math.max(1, scope))));
   if (resumeFromPending) {
     const done = nextGenerated.filter((g) => g.sent).length;
     toast.info(`${done} already got this exact message — skipping them. Continuing from #${firstPending}. Change subject/body to message them again.`);
@@ -4313,22 +4313,34 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               )}
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-[12px] font-semibold text-ink">Range:</span>
-                <input
-                  type="number"
-                  value={from}
-                  onChange={(e) => setFrom(Number(e.target.value) || 1)}
-                  className="w-16 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
-                />
-                <span className="text-[12px] text-ink">to</span>
-                <input
-                  type="number"
-                  value={to}
-                  onChange={(e) => setTo(Number(e.target.value) || 1)}
-                  className="w-16 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
-                />
-                <span className="text-[12px] text-ink-soft">of {generated.length}</span>
+              <div data-tour="campaign-range" className={`mt-2 rounded-lg border p-2 ${generated.length > to ? "border-amber-400 bg-amber-50" : "border-line"}`}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[12px] font-semibold text-ink">Execution range:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(1, generated.length)}
+                    value={from}
+                    onChange={(e) => setFrom(Math.max(1, Math.min(generated.length || 1, Number(e.target.value) || 1)))}
+                    className="w-16 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
+                  />
+                  <span className="text-[12px] text-ink">to</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={Math.max(1, generated.length)}
+                    value={to}
+                    onChange={(e) => setTo(Math.max(1, Math.min(generated.length || 1, Number(e.target.value) || 1)))}
+                    className="w-20 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
+                  />
+                  <span className="text-[12px] text-ink-soft">of {generated.length}</span>
+                </div>
+                {generated.length > to && (
+                  <p className="mt-1.5 flex items-start gap-1.5 text-[11px] font-semibold leading-snug text-amber-800" role="status">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                    This campaign has {generated.length.toLocaleString()} recipients, but the range ends at #{to.toLocaleString()}. Execution will stop at #{to.toLocaleString()} unless you increase the range.
+                  </p>
+                )}
               </div>
 
               <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-ink">
