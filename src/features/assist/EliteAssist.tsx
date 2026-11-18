@@ -923,8 +923,18 @@ export function EliteAssist({
       // workspace edit. Handle it deterministically so a model reply cannot
       // incorrectly insist that a subject is mandatory. The message body is
       // copied from the immediately preceding Rex draft and left unchanged.
-      const explicitlyRemoveSubject = /\b(?:remove|delete|drop|omit|clear|take out)\s+(?:the\s+)?subject\b|\b(?:without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i.test(content);
-      if (explicitlyRemoveSubject && onApplyCampaignTemplate) {
+      const explicitSubjectRemoval = /\b(?:remove|delete|drop|omit|clear|take out)\s+(?:the\s+)?subject\b|\b(?:without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i;
+      const explicitlyRemoveSubject = explicitSubjectRemoval.test(content);
+      const affirmativeReply = /^(?:yes|yeah|yep|correct|exactly|please do|do that|sure)[.!\s]*$/i.test(content);
+      const lastAssistantAskedSubjectChoice = [...msgs].reverse().find(message => message.role === "assistant")?.content
+        .match(/(?:placeholder|short subject|clear out the subject line)/i);
+      const priorUserExplicitlyRemovedSubject = [...msgs].reverse().some(message =>
+        message.role === "user" && explicitSubjectRemoval.test(message.content)
+      );
+      // If Rex asks a follow-up choice after the user already requested removal,
+      // a simple "yes" means leave the field genuinely blank—not "(No subject)".
+      const confirmsBlankSubject = affirmativeReply && Boolean(lastAssistantAskedSubjectChoice) && priorUserExplicitlyRemovedSubject;
+      if ((explicitlyRemoveSubject || confirmsBlankSubject) && onApplyCampaignTemplate) {
         const previousDraft = [...msgs].reverse().find(message =>
           message.role === "assistant" && /(?:\*\*Subject:\*\*|Subject:)\s*[^\n]*/i.test(message.content)
         );
