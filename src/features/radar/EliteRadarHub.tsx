@@ -90,8 +90,8 @@ export function EliteRadarHub({
   };
 
   const handleAddSnippet = () => {
-    if (!newTitle.trim() || !newSubject.trim() || !newBody.trim()) {
-      toast.error("Title, subject and body are required");
+    if (!newTitle.trim() || !newBody.trim()) {
+      toast.error("A title and message body are required. Subject is optional.");
       return;
     }
     const cat = SNIPPET_CATEGORIES.find((c) => c.id === newCat);
@@ -305,7 +305,7 @@ export function EliteRadarHub({
                 <input
                   value={newSubject}
                   onChange={(e) => setNewSubject(e.target.value)}
-                  placeholder="Subject"
+                  placeholder="Subject (optional)"
                   className="w-full rounded-lg border border-white/10 bg-black/30 px-2.5 py-2 text-[12px] outline-none"
                 />
                 <textarea
@@ -343,7 +343,7 @@ export function EliteRadarHub({
                     <button
                       type="button"
                       onClick={() => {
-                        void navigator.clipboard.writeText(`Subject: ${s.subject}\n\n${s.body}`);
+                        void navigator.clipboard.writeText(`${s.subject ? `Subject: ${s.subject}\n\n` : ""}${s.body}`);
                         setCopiedId(s.id);
                         toast.success("Copied");
                         setTimeout(() => setCopiedId(null), 1500);
@@ -375,7 +375,7 @@ export function EliteRadarHub({
                   </div>
                 </div>
                 <div className="mt-2 rounded-lg bg-black/30 p-2.5 font-mono text-[11px] text-white/70">
-                  <p className="font-bold text-white/90">Subj: {s.subject}</p>
+                  {s.subject ? <p className="font-bold text-white/90">Subject: {s.subject}</p> : <p className="font-semibold text-white/45">No subject saved</p>}
                   <p className="mt-1 whitespace-pre-line">{s.body}</p>
                 </div>
               </div>
