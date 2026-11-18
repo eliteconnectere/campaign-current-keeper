@@ -605,6 +605,8 @@ function Workspace() {
   delayRef.current = delay;
   const [from, setFrom] = useState(1);
   const [to, setTo] = useState(1000);
+  const [rangeConfirmOpen, setRangeConfirmOpen] = useState(false);
+  const rangeConfirmedRef = useRef(false);
   const [defaultScope, setDefaultScope] = useState(1000);
   const [scope, setScope] = useState(1000);
 
@@ -2436,12 +2438,11 @@ function removeCategory(kind: "duplicate" | "risky") {
       return false;
     }
 
-    if (currentGenerated.length > to) {
-      const confirmed = window.confirm(
-        `You have ${currentGenerated.length.toLocaleString()} recipients, but your execution range ends at #${to.toLocaleString()}. This campaign will stop at #${to.toLocaleString()} and the remaining recipients will not be included. Continue with this range?`
-      );
-      if (!confirmed) return false;
+    if (currentGenerated.length > to && !rangeConfirmedRef.current) {
+      setRangeConfirmOpen(true);
+      return false;
     }
+    rangeConfirmedRef.current = false;
 
     if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
       setOneSecAsk(true);
@@ -4320,34 +4321,26 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               )}
               </div>
 
-              <div data-tour="campaign-range" className={`mt-2 rounded-lg border p-2 ${generated.length > to ? "border-amber-400 bg-amber-50" : "border-line"}`}>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[12px] font-semibold text-ink">Execution range:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={Math.max(1, generated.length)}
-                    value={from}
-                    onChange={(e) => setFrom(Math.max(1, Math.min(generated.length || 1, Number(e.target.value) || 1)))}
-                    className="w-16 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
-                  />
-                  <span className="text-[12px] text-ink">to</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={Math.max(1, generated.length)}
-                    value={to}
-                    onChange={(e) => setTo(Math.max(1, Math.min(generated.length || 1, Number(e.target.value) || 1)))}
-                    className="w-20 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
-                  />
-                  <span className="text-[12px] text-ink-soft">of {generated.length}</span>
-                </div>
-                {generated.length > to && (
-                  <p className="mt-1.5 flex items-start gap-1.5 text-[11px] font-semibold leading-snug text-amber-800" role="status">
-                    <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                    This campaign has {generated.length.toLocaleString()} recipients, but the range ends at #{to.toLocaleString()}. Execution will stop at #{to.toLocaleString()} unless you increase the range.
-                  </p>
-                )}
+              <div data-tour="campaign-range" className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-[12px] font-semibold text-ink">Execution range:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, generated.length)}
+                  value={from}
+                  onChange={(e) => setFrom(Math.max(1, Math.min(generated.length || 1, Number(e.target.value) || 1)))}
+                  className="w-16 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
+                />
+                <span className="text-[12px] text-ink">to</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={Math.max(1, generated.length)}
+                  value={to}
+                  onChange={(e) => setTo(Math.max(1, Math.min(generated.length || 1, Number(e.target.value) || 1)))}
+                  className="w-20 rounded-full border border-line bg-white px-2 py-1 text-center text-[12px] text-ink outline-none"
+                />
+                <span className="text-[12px] text-ink-soft">of {generated.length}</span>
               </div>
 
               <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-ink">
@@ -4940,6 +4933,35 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
       )}
       {chatSettingsOpen && (
         <ChatSettings settings={settings} onChange={updateSettings} onClose={() => { setChatSettingsOpen(false); const back = chatSettingsReturnToSettings; setChatSettingsReturnToSettings(false); if (back) { setPanel("menu"); setMenuView("settings"); } }} />
+      )}
+      {rangeConfirmOpen && (
+        <div className="fixed inset-0 z-[85] flex items-end justify-center bg-ink/50 p-4 sm:items-center" role="alertdialog" aria-modal="true" aria-labelledby="campaign-range-confirm-title" aria-describedby="campaign-range-confirm-description">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-brand/25 bg-white shadow-xl animate-scale-in">
+            <div className="border-b border-brand/15 bg-brand-soft px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-white text-brand">
+                  <AlertTriangle className="size-5" />
+                </span>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-brand">Campaign range check</p>
+                  <h3 id="campaign-range-confirm-title" className="text-[15px] font-bold text-ink">This campaign will stop at your selected range</h3>
+                </div>
+              </div>
+            </div>
+            <div id="campaign-range-confirm-description" className="space-y-2 p-4">
+              <p className="text-[12.5px] leading-relaxed text-ink-soft">
+                Your list contains <strong className="text-ink">{generated.length.toLocaleString()} recipients</strong>, but the selected range ends at <strong className="text-ink">#{to.toLocaleString()}</strong>.
+              </p>
+              <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-semibold leading-relaxed text-red-800">
+                Only recipients #{from.toLocaleString()}–#{to.toLocaleString()} will be included. The remaining {Math.max(0, generated.length - to).toLocaleString()} recipients will not be part of this run.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => { setRangeConfirmOpen(false); rangeConfirmedRef.current = false; }} className="flex-1 rounded-xl border border-line px-3 py-2.5 text-[12.5px] font-semibold text-ink">Review range</button>
+                <button type="button" onClick={() => { setRangeConfirmOpen(false); rangeConfirmedRef.current = true; void startCampaign(false); }} className="flex-1 rounded-xl bg-brand px-3 py-2.5 text-[12.5px] font-semibold text-primary-foreground">Continue</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
       {oneSecAsk && (
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-ink/50 p-4 sm:items-center" role="dialog" aria-modal="true">
