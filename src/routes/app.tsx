@@ -7,7 +7,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { getWorkspaceDisplaySession } from "@/features/workspace/offline-session";
 import { connectGmailAccount } from "@/lib/gmailConnect";
 import { enqueueCampaign, getRexCampaignWorkspaceData } from "@/lib/campaign.functions";
-import { getWorkspaceSnapshot, saveWorkspaceSnapshot } from "@/lib/workspace-sync.functions";
 import {
   disconnectGmailProfile,
   listGmailProfiles,
@@ -548,9 +547,6 @@ async function enrichWithDomainScan(list: Recipient[]): Promise<Recipient[]> {
 
 function Workspace() {
   const [ready, setReady] = useState(false);
-  const cloudWorkspaceRevisionRef = useRef(0);
-  const cloudWorkspaceConflictRef = useRef(false);
-  const cloudWorkspaceLastPayloadRef = useRef<string | null>(null);
   const [accepted, setAccepted] = useState(true);
 
   const [mode, setMode] = useState<"standard" | "elite" | "both">("standard");
@@ -1137,53 +1133,24 @@ function Workspace() {
     return () => window.clearInterval(timer);
   }, [eraseRequest?.expires_at, uid]);
 
-  /* ---- restore this account's own workspace + preferences ---- */
+  /* ---- restore personal workspace from this device only ---- */
   useEffect(() => {
     let cancelled = false;
     setReady(false);
     setSettings(loadSettings(uid));
-    cloudWorkspaceRevisionRef.current = 0;
-    cloudWorkspaceConflictRef.current = false;
-    cloudWorkspaceLastPayloadRef.current = null;
     if (!uid) return () => { cancelled = true; };
 
-    const restore = async () => {
-      const localSnapshot = loadWorkspace(uid);
-      let snapshot: Partial<WorkspaceSnapshot> | null = localSnapshot;
-      try {
-        const cloud = await getWorkspaceSnapshot();
-        if (cancelled) return;
-        cloudWorkspaceRevisionRef.current = cloud.revision;
-        if (cloud.snapshot) {
-          snapshot = { ...cloud.snapshot, campaignRuns: localSnapshot?.campaignRuns, sentRecipientEmails: localSnapshot?.sentRecipientEmails } as Partial<WorkspaceSnapshot>;
-          const cloudPayload = { ...cloud.snapshot } as Record<string, unknown>;
-          delete cloudPayload["campaignRuns"];
-          delete cloudPayload["sentRecipientEmails"];
-          cloudWorkspaceLastPayloadRef.current = JSON.stringify(cloudPayload);
-          saveWorkspace(snapshot as WorkspaceSnapshot, uid);
-        } else if (localSnapshot) {
-          const migrated = await saveWorkspaceSnapshot({ data: { snapshot: localSnapshot as WorkspaceSnapshot, expectedRevision: 0 } });
-          if (cancelled) return;
-          if (migrated.ok) {
-            cloudWorkspaceRevisionRef.current = migrated.revision;
-            const cloudPayload = { ...localSnapshot } as Record<string, unknown>;
-            delete cloudPayload["campaignRuns"];
-            delete cloudPayload["sentRecipientEmails"];
-            cloudWorkspaceLastPayloadRef.current = JSON.stringify(cloudPayload);
-          } else cloudWorkspaceConflictRef.current = true;
-        }
-      } catch (error) {
-        console.warn('Cloud workspace sync unavailable; using this device saved workspace.', error);
-      }
+    const restore = () => {
+      const snapshot = loadWorkspace(uid);
       if (cancelled) return;
       if (snapshot) {
         if (snapshot.mode) setMode(snapshot.mode);
-        if (typeof snapshot.raw === 'string') setRaw(snapshot.raw);
-        if (snapshot.recipients) setRecipients(snapshot.recipients.map((r) => ((r.status as string) === 'invalid' ? { ...r, status: 'risky' as const } : r)));
-        if (typeof snapshot.validated === 'boolean') setValidated(snapshot.validated);
-        if (typeof snapshot.editing === 'boolean') setEditing(snapshot.editing);
-        if (snapshot.tab) setTab((snapshot.tab === 'invalid' ? 'risky' : snapshot.tab) as Status);
-        if (typeof snapshot.twoWay === 'boolean') setTwoWay(snapshot.twoWay);
+        if (typeof snapshot.raw === "string") setRaw(snapshot.raw);
+        if (snapshot.recipients) setRecipients(snapshot.recipients.map((r) => ((r.status as string) === "invalid" ? { ...r, status: "risky" as const } : r)));
+        if (typeof snapshot.validated === "boolean") setValidated(snapshot.validated);
+        if (typeof snapshot.editing === "boolean") setEditing(snapshot.editing);
+        if (snapshot.tab) setTab((snapshot.tab === "invalid" ? "risky" : snapshot.tab) as Status);
+        if (typeof snapshot.twoWay === "boolean") setTwoWay(snapshot.twoWay);
         if (snapshot.tplA) setTplA(snapshot.tplA);
         if (snapshot.tplB) setTplB(snapshot.tplB);
         if (snapshot.generated) setGenerated(snapshot.generated);
@@ -1191,20 +1158,20 @@ function Workspace() {
         if (Array.isArray(snapshot.campaignRuns)) {
           const restoredRuns = snapshot.campaignRuns.slice(0, 5);
           setCampaignRuns(restoredRuns);
-          const resumeRequested = localStorage.getItem(campaignResumeKey(uid)) === '1' || localStorage.getItem('ec-engine-resume') === '1';
-          const resumable = restoredRuns.find((run) => run.status === 'running' || run.status === 'paused');
+          const resumeRequested = localStorage.getItem(campaignResumeKey(uid)) === "1" || localStorage.getItem("ec-engine-resume") === "1";
+          const resumable = restoredRuns.find((run) => run.status === "running" || run.status === "paused");
           if (resumeRequested && resumable) {
             activeCampaignIdRef.current = resumable.id;
-            setCampaignRuns((previous) => previous.map((run) => run.id === resumable.id ? (({ finishedAt: _f, ...rest }) => ({ ...rest, status: 'paused' as const }))(run) : run));
-            setEngine('paused');
+            setCampaignRuns((previous) => previous.map((run) => run.id === resumable.id ? (({ finishedAt: _f, ...rest }) => ({ ...rest, status: "paused" as const }))(run) : run));
+            setEngine("paused");
             setAutoResumePending(true);
-            try { localStorage.setItem(campaignResumeKey(uid), '1'); localStorage.removeItem('ec-engine-resume'); } catch {}
+            try { localStorage.setItem(campaignResumeKey(uid), "1"); localStorage.removeItem("ec-engine-resume"); } catch {}
           } else if (resumeRequested) {
-            try { localStorage.removeItem(campaignResumeKey(uid)); localStorage.removeItem('ec-engine-resume'); } catch {}
+            try { localStorage.removeItem(campaignResumeKey(uid)); localStorage.removeItem("ec-engine-resume"); } catch {}
           }
         }
         if (snapshot.sentRecipientEmails) { const history = snapshot.sentRecipientEmails.map((email) => email.trim().toLowerCase()).filter(Boolean); sentRecipientEmailsRef.current = new Set(history); setSentRecipientEmails(history); }
-        if (snapshot.genTab) setGenTab(snapshot.genTab as 'all' | 'sent' | 'pending');
+        if (snapshot.genTab) setGenTab(snapshot.genTab as "all" | "sent" | "pending");
         if (snapshot.delay) setDelay(snapshot.delay >= 3 && snapshot.delay <= 8 ? snapshot.delay : 5);
         if (snapshot.from) setFrom(snapshot.from);
         if (snapshot.to) setTo(snapshot.to === 50 ? 1000 : snapshot.to);
@@ -1214,11 +1181,11 @@ function Workspace() {
         if (snapshot.notes?.length) setNotes(snapshot.notes);
         if (snapshot.smartFillHistory) setSmartFillHistory(snapshot.smartFillHistory);
         if (snapshot.activeProfileId) setActiveProfileId(snapshot.activeProfileId);
-        if (typeof snapshot.cleanupHandled === 'boolean') setCleanupHandled(snapshot.cleanupHandled);
+        if (typeof snapshot.cleanupHandled === "boolean") setCleanupHandled(snapshot.cleanupHandled);
       }
       setReady(true);
     };
-    void restore();
+    restore();
     return () => { cancelled = true; };
   }, [uid]);
 
@@ -1307,27 +1274,9 @@ function Workspace() {
     campaignRuns,
   };
     const id = window.setTimeout(() => {
+      // Personal workspace data is device-local. Do not read from or write to Supabase.
       saveWorkspace(snapshot, uid);
-      if (cloudWorkspaceConflictRef.current) return;
-      const cloudSnapshot = { ...snapshot };
-      delete cloudSnapshot.campaignRuns;
-      delete cloudSnapshot.sentRecipientEmails;
-      const cloudPayload = JSON.stringify(cloudSnapshot);
-      if (cloudWorkspaceLastPayloadRef.current === cloudPayload) return;
-      cloudWorkspaceLastPayloadRef.current = cloudPayload;
-      void saveWorkspaceSnapshot({ data: { snapshot: cloudSnapshot, expectedRevision: cloudWorkspaceRevisionRef.current } })
-        .then((result) => {
-          if (result.ok) cloudWorkspaceRevisionRef.current = result.revision;
-          else {
-            cloudWorkspaceConflictRef.current = true;
-            toast.warning("A newer workspace version exists on another device. Refresh this app to load it before continuing edits.");
-          }
-        })
-        .catch((error) => {
-          if (cloudWorkspaceLastPayloadRef.current === cloudPayload) cloudWorkspaceLastPayloadRef.current = null;
-          console.warn("Cloud workspace save failed; local copy preserved.", error);
-        });
-    }, 900);
+    }, 300);
     return () => window.clearTimeout(id);
   }, [
     ready,
