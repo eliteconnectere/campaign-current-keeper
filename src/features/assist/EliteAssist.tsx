@@ -912,9 +912,9 @@ export function EliteAssist({
     const isRecipientPaste = Boolean(onImportRecipients) && pastedEmails.length > 0 &&
       (explicitListImport || recipientContext || priorRecipientContext || plainEmailList);
     const attached = pendingAttachments;
-    const safeInstruction = content.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, "[recipient email]").trim();
+    const safeInstruction = content.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[recipient email]").trim();
     const safeUserTurn = isRecipientPaste
-      ? "[Recipient list pasted: " + pastedEmails.length + " email addresses. The list is staged privately and has not been imported.]\\n" + safeInstruction
+      ? "[Recipient list pasted: " + pastedEmails.length + " email addresses. The list is staged privately and has not been imported.]\n" + safeInstruction
       : content;
     const next = [...msgs, { role: "user" as const, content: safeUserTurn, ...(attached.length ? { attachments: attached } : {}) }];
     setPendingAttachments([]);
