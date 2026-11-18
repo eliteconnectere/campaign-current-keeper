@@ -124,6 +124,18 @@ export async function listLocalRexConversations(userId: string): Promise<{ conve
   } finally { db.close(); }
 }
 
+export async function deleteLocalRexConversation(userId: string, conversationId: string): Promise<void> {
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction(CONVERSATIONS, "readwrite");
+    const store = tx.objectStore(CONVERSATIONS);
+    const done = transactionDone(tx);
+    const row = await requestValue<StoredConversation | undefined>(store.get(conversationId));
+    if (row?.userId === userId) store.delete(conversationId);
+    await done;
+  } finally { db.close(); }
+}
+
 export async function getLocalRexConversation(userId: string, conversationId: string): Promise<{ conversation: RexConversation | null; messages: RexStoredMessage[] }> {
   const db = await openMemoryDb();
   try {
