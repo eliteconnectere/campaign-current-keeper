@@ -37,6 +37,30 @@ const TONES: Record<SoundKind, Array<[number, number, number]>> = {
 };
 
 let ctx: AudioContext | null = null;
+let audioLifecycleBound = false;
+
+function resumeExistingAudioContext() {
+  if (!ctx || ctx.state === "closed" || ctx.state === "running") return;
+  // Browsers may suspend Web Audio when an installed PWA is backgrounded.
+  // Try on foreground, then retry synchronously from the next real user gesture.
+  void ctx.resume().catch(() => {});
+}
+
+function bindAudioLifecycleRecovery() {
+  if (audioLifecycleBound || typeof window === "undefined") return;
+  audioLifecycleBound = true;
+  const resumeWhenVisible = () => {
+    if (document.visibilityState === "visible") resumeExistingAudioContext();
+  };
+  window.addEventListener("focus", resumeExistingAudioContext);
+  window.addEventListener("pageshow", resumeExistingAudioContext);
+  document.addEventListener("visibilitychange", resumeWhenVisible);
+  // iOS Safari may require a fresh interaction after returning from background.
+  // These handlers only resume the existing context; they do not play a sound.
+  window.addEventListener("pointerdown", resumeExistingAudioContext, { passive: true });
+  window.addEventListener("touchend", resumeExistingAudioContext, { passive: true });
+  window.addEventListener("keydown", resumeExistingAudioContext);
+}
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -44,6 +68,7 @@ function getAudioContext(): AudioContext | null {
   if (!Ctor) return null;
   try {
     ctx ??= new Ctor();
+    bindAudioLifecycleRecovery();
     return ctx;
   } catch {
     return null;
