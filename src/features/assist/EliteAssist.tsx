@@ -912,13 +912,20 @@ export function EliteAssist({
     const isRecipientPaste = Boolean(onImportRecipients) && pastedEmails.length > 0 &&
       (explicitListImport || recipientContext || priorRecipientContext || plainEmailList);
     const attached = pendingAttachments;
-    const next = [...msgs, { role: "user" as const, content, ...(attached.length ? { attachments: attached } : {}) }];
+    const safeInstruction = content.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/gi, "[recipient email]").trim();
+    const safeUserTurn = isRecipientPaste
+      ? "[Recipient list pasted: " + pastedEmails.length + " email addresses. The list is staged privately and has not been imported.]\\n" + safeInstruction
+      : content;
+    const next = [...msgs, { role: "user" as const, content: safeUserTurn, ...(attached.length ? { attachments: attached } : {}) }];
     setPendingAttachments([]);
     setMsgs(next);
     setText("");
     setBusy(true);
     setSuggests([]);
     try {
+      // Save every user turn before command-specific early returns. Recipient
+      // addresses remain redacted in local conversation history.
+      await persistMessage("user", safeUserTurn);
       // A direct request to remove a previously drafted subject is a narrow
       // workspace edit. Handle it deterministically so a model reply cannot
       // incorrectly insist that a subject is mandatory. The message body is
@@ -1076,13 +1083,7 @@ export function EliteAssist({
       }
 
       if (isRecipientPaste) {
-        // Keep actual addresses private in component state; give the assistant
-        // the user's instruction plus a redacted recipient-list reference.
-        const safeInstruction = content.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[recipient email]").trim();
-        const safeUserTurn = "[Recipient list pasted: " + pastedEmails.length + " email addresses. The list is staged privately and has not been imported.]\n" + safeInstruction;
-        next[next.length - 1] = { role: "user", content: safeUserTurn };
-        setMsgs(next);
-        await persistMessage("user", safeUserTurn);
+        // User turn was saved above in redacted form.
         await stageRecipientImport(content, "Pasted into Rex chat", false, true);
         const stagedAssistantTurn = "Staged **" + pastedEmails.length.toLocaleString() + " recipients** privately (list hidden in chat — open Recipients to see them). Agree the message, then say **OK send** — I will import, validate, and show Approve. Nothing has been sent.";
         next.push({ role: "assistant", content: stagedAssistantTurn });
@@ -1091,8 +1092,6 @@ export function EliteAssist({
           .replace(/\b(?:here are|these are|the following are|my|the|a|an|list of|email|emails|addresses|address|contacts|recipients|recipient list|contact list|list|below|please|kindly)\b/gi, "")
           .replace(/[^a-z0-9]/gi, "");
         if (!remainingInstruction) return;
-      } else {
-        await persistMessage("user", content);
       }
       if (pendingImport && /\b(cancel|discard)\b/i.test(content)) {
         cancelRecipientImport();
