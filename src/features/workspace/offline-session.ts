@@ -2,14 +2,15 @@ import type { Session } from "@supabase/supabase-js";
 
 /**
  * Resolve the active account for workspace display.
- * When the device is offline, use only the previously persisted Supabase session
- * so the locally saved workspace snapshot can open. Server-backed actions must
- * still remain unavailable until the connection is restored and the session is
- * revalidated by Supabase.
+ * Prefer the persisted local session so the app can reopen from its installed
+ * offline shell. When offline, this session is display-only: server-backed
+ * actions remain unavailable until connectivity returns and Supabase revalidates it.
  */
 export async function getWorkspaceDisplaySession(): Promise<Session | null> {
-  if (typeof window !== "undefined" && typeof navigator !== "undefined" && !navigator.onLine) {
-    return readStoredSession();
+  const storedSession = readStoredSession();
+
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    return storedSession;
   }
 
   try {
@@ -17,12 +18,13 @@ export async function getWorkspaceDisplaySession(): Promise<Session | null> {
       supabase.auth.getSession(),
     );
     if (!error && data.session) return data.session;
+    // A network transition or a temporarily unavailable auth lookup must not
+    // hide a valid locally persisted workspace from the installed app.
+    return storedSession;
   } catch {
-    // If the connection dropped while checking, use the local display-only session below.
+    // Supabase auth may be unreachable while the browser still reports online.
+    return storedSession;
   }
-
-  if (typeof navigator !== "undefined" && !navigator.onLine) return readStoredSession();
-  return null;
 }
 
 function readStoredSession(): Session | null {

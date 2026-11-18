@@ -53,13 +53,53 @@ export async function registerAppWorker() {
             console.warn("[PWA] Navigation shell was not cacheable", path, response.status, response.url);
             continue;
           }
-          await cache.put(request, response.clone());
+          const html = await response.clone().text();
+          await cache.put(request, new Response(html, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          }));
+
+          // AfroVibez also saves the JavaScript and CSS referenced by its
+          // cached entry pages. Do the same so the offline HTML can actually boot.
+          const document = new DOMParser().parseFromString(html, "text/html");
+          const assetUrls = Array.from(
+            document.querySelectorAll<HTMLScriptElement | HTMLLinkElement>("script[src], link[href]"),
+          )
+            .map((element) => element instanceof HTMLScriptElement ? element.src : element.href)
+            .filter((asset) => {
+              try {
+                const assetUrl = new URL(asset, window.location.origin);
+                const pathname = assetUrl.pathname.toLowerCase();
+                return assetUrl.origin === window.location.origin &&
+                  (pathname.startsWith("/assets/") ||
+                    [".js", ".mjs", ".css"].some((extension) => pathname.endsWith(extension)));
+              } catch {
+                return false;
+              }
+            });
+          const assetCache = await caches.open("ec-assets");
+          await Promise.all(Array.from(new Set(assetUrls)).map(async (asset) => {
+            try {
+              const assetUrl = new URL(asset, window.location.origin);
+              if (await assetCache.match(assetUrl.toString())) return;
+              const assetResponse = await fetch(new Request(assetUrl.toString(), {
+                method: "GET",
+                credentials: "same-origin",
+                cache: "no-store",
+              }));
+              if (assetResponse.ok) await assetCache.put(assetUrl.toString(), assetResponse.clone());
+            } catch (error) {
+              console.warn("[PWA] Could not cache app asset", asset, error);
+            }
+          }));
+
           // Verify the same URL can be read back before considering it cached.
           const cached = await cache.match(request);
           if (!cached || !cached.headers.get("content-type")?.includes("text/html")) {
             console.warn("[PWA] Navigation shell cache verification failed", path);
           } else {
-            console.info("[PWA] Offline navigation shell cached", path);
+            console.info("[PWA] Offline navigation shell and app assets cached", path, assetUrls.length);
           }
         }
       } catch (error) {
