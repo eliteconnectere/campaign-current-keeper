@@ -319,7 +319,7 @@ export const askEliteAssist = createServerFn({
         Object.entries(rawAccount).slice(0, 40).map(([name, value]) => [
           name,
           typeof value === "string"
-            ? value.slice(0, name === "campaignContext" || name === "approvedWorkspaceContext" ? 24000 : 1200)
+            ? value.slice(0, name === "campaignContext" || name === "approvedWorkspaceContext" || name === "localMemoryContext" ? 24000 : 1200)
             : Array.isArray(value)
               ? value.slice(0, 30).map((item) => String(item).slice(0, 500))
               : value,
@@ -362,19 +362,11 @@ export const askEliteAssist = createServerFn({
     // The signed-in owner has chosen Rex as their private workspace assistant.
     // Load the owner's own saved Rex memory automatically for continuity; this
     // is read-only, owner-scoped context and never requires an approval step.
-    let previousConversationMemory = "";
-    {
-      const { data: savedMemories, error: memoryError } = await db.from("rex_memory_entries")
-        .select("category,content,updated_at")
-        .eq("user_id", context.userId)
-        .order("updated_at", { ascending: false })
-        .limit(30);
-      if (memoryError) console.warn("Could not load Rex owner memory context", memoryError);
-      previousConversationMemory = (savedMemories ?? [])
-        .map((entry: any) => "[" + String(entry.category ?? "memory").slice(0, 40) + "] " + String(entry.content ?? "").slice(0, 700))
-        .join("\\n")
-        .slice(0, 8_000);
-    }
+    // Conversation and saved-memory context is supplied by the signed-in device
+    // from IndexedDB. Do not read or write Rex memory from Supabase.
+    const previousConversationMemory = typeof data.account?.["localMemoryContext"] === "string"
+      ? data.account["localMemoryContext"].slice(0, 8_000)
+      : "";
 
     // Durable account records are fetched through owner-scoped server tools.
     // Live in-memory workspace snapshots are supplied by this authenticated
@@ -406,11 +398,6 @@ export const askEliteAssist = createServerFn({
         .eq("user_id", context.userId)
         .order("updated_at", { ascending: false })
         .limit(12),
-      db.from("rex_conversations")
-        .select("id,title,summary,updated_at,last_message_at")
-        .eq("user_id", context.userId)
-        .order("last_message_at", { ascending: false })
-        .limit(12),
       db.from("rex_events")
         .select("kind,severity,title,detail,source,occurred_at,resolved_at")
         .eq("user_id", context.userId)
@@ -427,20 +414,20 @@ export const askEliteAssist = createServerFn({
     ]);
     const durableWorkspaceSync = {
       recentCampaigns: syncResults[0].error ? [] : (syncResults[0].data ?? []),
-      recentRexConversations: syncResults[1].error ? [] : (syncResults[1].data ?? []),
-      recentRexEvents: syncResults[2].error ? [] : (syncResults[2].data ?? []),
-      privateChatProfile: syncResults[3].error ? null : syncResults[3].data,
-      privateChatConnections: syncResults[4].error ? null : (syncResults[4].data ?? []).map((row: any) => ({
+      // Rex conversation history is intentionally device-local, not a Supabase source.
+      recentRexConversations: [],
+      recentRexEvents: syncResults[1].error ? [] : (syncResults[1].data ?? []),
+      privateChatProfile: syncResults[2].error ? null : syncResults[2].data,
+      privateChatConnections: syncResults[3].error ? null : (syncResults[3].data ?? []).map((row: any) => ({
         connectionId: row.id,
         connectedUserId: row.user_a === context.userId ? row.user_b : row.user_a,
         createdAt: row.created_at,
       })),
       unavailableSources: [
         ...(syncResults[0].error ? ["campaign history"] : []),
-        ...(syncResults[1].error ? ["Rex conversation index"] : []),
-        ...(syncResults[2].error ? ["Rex event history"] : []),
-        ...(syncResults[3].error ? ["Private Chat profile"] : []),
-        ...(syncResults[4].error ? ["Private Chat connections"] : []),
+        ...(syncResults[1].error ? ["Rex event history"] : []),
+        ...(syncResults[2].error ? ["Private Chat profile"] : []),
+        ...(syncResults[3].error ? ["Private Chat connections"] : []),
       ],
     };
 
