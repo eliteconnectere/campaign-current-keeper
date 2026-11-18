@@ -34,8 +34,8 @@ export const enqueueCampaign = createServerFn({ method: "POST" })
     if (uniqueRecipientEmails.size !== recipients.length) {
       throw new Error("Duplicate email addresses were found. Remove duplicates before preparing this campaign; no campaign was created.");
     }
-    if (recipients.some((recipient) => !recipient.subject.trim() || !recipient.body.trim())) {
-      throw new Error("Every campaign recipient must have a complete subject and message body. Empty templates cannot be queued or sent.");
+    if (recipients.some((recipient) => !recipient.body.trim())) {
+      throw new Error("Every campaign recipient must have a message body. Email subjects are optional.");
     }
     return {
       name: String(input.name ?? "Campaign").slice(0, 200),
