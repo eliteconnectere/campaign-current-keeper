@@ -70,8 +70,10 @@ export async function registerAppWorker() {
             .filter((asset) => {
               try {
                 const assetUrl = new URL(asset, window.location.origin);
+                const pathname = assetUrl.pathname.toLowerCase();
                 return assetUrl.origin === window.location.origin &&
-                  (/^\\/assets\\//.test(assetUrl.pathname) || /\\.(?:js|mjs|css)$/i.test(assetUrl.pathname));
+                  (pathname.startsWith("/assets/") ||
+                    [".js", ".mjs", ".css"].some((extension) => pathname.endsWith(extension)));
               } catch {
                 return false;
               }
