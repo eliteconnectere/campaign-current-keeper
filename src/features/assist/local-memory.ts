@@ -6,6 +6,47 @@
  * no expiry policy, and no automatic deletion or cleanup.
  */
 export type RexMemorySettings = { saveHistory: boolean; rememberContext: boolean };
+export type RexConfig = {
+  displayName: string;
+  personality: "balanced" | "professional" | "friendly" | "direct";
+  autonomousMode: boolean;
+  campaignMonitoring: boolean;
+  allowCampaignExecution: boolean;
+  allowCampaignScheduling: boolean;
+  preSendReview: boolean;
+  warnOnRisk: boolean;
+  requireApproval: boolean;
+  monitorDelivery: boolean;
+  notifyHighRisk: boolean;
+  notifyCampaignIssues: boolean;
+  notifyRecommendations: boolean;
+};
+export const DEFAULT_REX_CONFIG: RexConfig = {
+  displayName: "Rex", personality: "friendly", autonomousMode: true,
+  campaignMonitoring: true, allowCampaignExecution: true, allowCampaignScheduling: true,
+  preSendReview: true, warnOnRisk: true, requireApproval: false,
+  monitorDelivery: true, notifyHighRisk: true, notifyCampaignIssues: true,
+  notifyRecommendations: false,
+};
+function validateRexConfig(input: Partial<RexConfig> = {}): RexConfig {
+  const name = String(input.displayName ?? "Rex").trim().replace(/[<>]/g, "").slice(0, 24) || "Rex";
+  const personalities = ["balanced", "professional", "friendly", "direct"];
+  return {
+    displayName: name,
+    personality: personalities.includes(String(input.personality)) ? input.personality as RexConfig["personality"] : "friendly",
+    autonomousMode: input.autonomousMode !== false,
+    campaignMonitoring: input.campaignMonitoring !== false,
+    allowCampaignExecution: input.allowCampaignExecution !== false,
+    allowCampaignScheduling: input.allowCampaignScheduling !== false,
+    preSendReview: input.preSendReview !== false,
+    warnOnRisk: input.warnOnRisk !== false,
+    requireApproval: false,
+    monitorDelivery: input.monitorDelivery !== false,
+    notifyHighRisk: input.notifyHighRisk !== false,
+    notifyCampaignIssues: input.notifyCampaignIssues !== false,
+    notifyRecommendations: input.notifyRecommendations === true,
+  };
+}
 export type RexConversation = {
   id: string;
   title: string;
@@ -33,9 +74,10 @@ export type RexLocalMemoryEntry = {
 };
 
 const DB_NAME = "elite-connectere-rex-local-memory";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CONVERSATIONS = "conversations";
 const SETTINGS = "settings";
+const REX_CONFIG = "rexConfig";
 const ENTRIES = "memoryEntries";
 const DEFAULT_SETTINGS: RexMemorySettings = { saveHistory: true, rememberContext: true };
 
@@ -54,6 +96,7 @@ function openMemoryDb(): Promise<IDBDatabase> {
       const db = request.result;
       if (!db.objectStoreNames.contains(CONVERSATIONS)) db.createObjectStore(CONVERSATIONS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(SETTINGS)) db.createObjectStore(SETTINGS, { keyPath: "userId" });
+      if (!db.objectStoreNames.contains(REX_CONFIG)) db.createObjectStore(REX_CONFIG, { keyPath: "userId" });
       if (!db.objectStoreNames.contains(ENTRIES)) db.createObjectStore(ENTRIES, { keyPath: "id" });
     };
     request.onsuccess = () => {
@@ -95,6 +138,30 @@ export async function getLocalRexMemorySettings(userId: string): Promise<{ setti
     const row = await requestValue<any>(tx.objectStore(SETTINGS).get(userId));
     await done;
     return { settings: row ? { saveHistory: row.saveHistory !== false, rememberContext: row.rememberContext !== false } : { ...DEFAULT_SETTINGS } };
+  } finally { db.close(); }
+}
+
+export async function getLocalRexConfig(userId: string): Promise<{ config: RexConfig }> {
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction(REX_CONFIG, "readonly");
+    const done = transactionDone(tx);
+    const row = await requestValue<any>(tx.objectStore(REX_CONFIG).get(userId));
+    await done;
+    return { config: validateRexConfig(row?.config ?? {}) };
+  } finally { db.close(); }
+}
+
+export async function saveLocalRexConfig(userId: string, config: Partial<RexConfig>): Promise<{ config: RexConfig; savedAt: string }> {
+  const normalized = validateRexConfig(config);
+  const savedAt = new Date().toISOString();
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction(REX_CONFIG, "readwrite");
+    const done = transactionDone(tx);
+    tx.objectStore(REX_CONFIG).put({ userId, config: normalized, updated_at: savedAt });
+    await done;
+    return { config: normalized, savedAt };
   } finally { db.close(); }
 }
 
