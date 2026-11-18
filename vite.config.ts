@@ -23,12 +23,21 @@ export default defineConfig({
         manifest: false,
         devOptions: { enabled: false },
         workbox: {
+          // Cache the actual entry pages during service-worker installation, not only
+          // after the app JavaScript has started. This lets an installed app reopen
+          // while offline, including its existing local sign-in session.
+          additionalManifestEntries: [
+            { url: "/", revision: null },
+            { url: "/app", revision: null },
+            { url: "/manifest.webmanifest", revision: null },
+          ],
           globPatterns: ["**/*.{js,mjs,css,html}"],
           // Take control on the first load so offline navigation is handled consistently.
           clientsClaim: true,
           skipWaiting: true,
           cleanupOutdatedCaches: true,
-          navigateFallback: null,
+          navigateFallback: "/",
+          navigateFallbackDenylist: [/^\/api\//, /^\/~oauth/],
           runtimeCaching: [
             {
               urlPattern: ({ request, url }) =>
