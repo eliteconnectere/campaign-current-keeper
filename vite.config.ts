@@ -24,6 +24,10 @@ export default defineConfig({
         devOptions: { enabled: false },
         workbox: {
           globPatterns: ["**/*.{js,mjs,css,html}"],
+          // Take control on the first load so offline navigation is handled consistently.
+          clientsClaim: true,
+          skipWaiting: true,
+          cleanupOutdatedCaches: true,
           navigateFallback: null,
           runtimeCaching: [
             {
