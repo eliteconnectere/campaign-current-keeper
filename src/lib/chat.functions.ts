@@ -277,62 +277,12 @@ async function verifyRexPrivateChatSendApproval(
 }
 
 /** Sends a Private Chat message from Rex only after the user approves the exact recipient and text. */
+/** Private Chat is disconnected until a replacement messaging provider is configured. */
 export const sendPrivateChatMessageForRex = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { approvalId: string; recipient: string; body: string }) => {
-    const approvalId = String(input?.approvalId ?? "").trim();
-    if (!/^[0-9a-f-]{36}$/i.test(approvalId)) throw new Error("A valid Rex approval is required.");
-    const recipient = String(input?.recipient ?? "").trim().replace(/^@/, "").slice(0, 80);
-    const body = String(input?.body ?? "").trim().slice(0, 4000);
-    if (recipient.length < 2) throw new Error("Choose a Private Chat contact.");
-    if (!body) throw new Error("The message is empty.");
-    return { approvalId, recipient, body };
-  })
-  .handler(async ({ data, context }) => {
-    const email = (context.claims as { email?: string } | undefined)?.email;
-    if (!(await eligibility(context.userId, email))) throw new Error("Private Chat is not available on this account.");
-    const { supabaseAdmin: db } = await import("@/integrations/supabase/client.server");
-    const me = context.userId;
-    await verifyRexPrivateChatSendApproval(db, me, data.approvalId, data.recipient, data.body);
-    const { data: connections, error: connectionError } = await db
-      .from("connections" as never)
-      .select("id, user_a, user_b")
-      .or("user_a.eq." + me + ",user_b.eq." + me);
-    if (connectionError) throw new Error("I couldn't check your connected Private Chat contacts.");
-    const rows = (connections ?? []) as { id: string; user_a: string; user_b: string }[];
-    if (!rows.length) throw new Error("You don't have any connected Private Chat contacts yet. Open Private Chat and connect with the person first.");
-    const partnerIds = rows.map(row => row.user_a === me ? row.user_b : row.user_a);
-    const { data: profiles, error: profileError } = await db
-      .from("chat_profiles" as never)
-      .select("user_id, display_name, username")
-      .in("user_id", partnerIds);
-    if (profileError) throw new Error("I couldn't identify that Private Chat contact.");
-    const needle = data.recipient.toLowerCase();
-    const matches = ((profiles ?? []) as { user_id: string; display_name: string; username: string }[])
-      .filter(profile => profile.display_name.toLowerCase() === needle || profile.username.toLowerCase() === needle);
-    if (matches.length !== 1) {
-      if (!matches.length) throw new Error("I couldn't find one connected contact matching that exact name or username. Check the contact name in Private Chat.");
-      throw new Error("More than one contact matches that name. Use the person's exact @username.");
-    }
-    const partner = matches[0]!;
-    const connection = rows.find(row => row.user_a === partner.user_id || row.user_b === partner.user_id);
-    if (!connection) throw new Error("That person is not in your connected Private Chat contacts.");
-    const { inspectOutgoingMessage, clearExpiredRestriction } = await import("@/server/guardian.server");
-    await clearExpiredRestriction(me);
-    const safety = await inspectOutgoingMessage({
-      userId: me,
-      ...(email ? { email } : {}),
-      connectionId: connection.id,
-      body: data.body,
-    });
-    if (!safety.allowed) throw new Error(safety.message || "The message did not pass the safety check.");
-    const { data: sent, error } = await db
-      .from("chat_messages" as never)
-      .insert({ connection_id: connection.id, sender_id: me, kind: "text", body: data.body, reply_to: null } as never)
-      .select("id, created_at")
-      .single();
-    if (error || !sent) throw new Error("The Private Chat message was not sent. Nothing was delivered.");
-    return { ok: true as const, recipient: partner.display_name, username: partner.username, sentAt: (sent as { created_at: string }).created_at };
+  .inputValidator((_input: { approvalId: string; recipient: string; body: string }) => ({}))
+  .handler(async () => {
+    throw new Error("Private Chat is temporarily offline. No message was sent.");
   });
 
 
