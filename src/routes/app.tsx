@@ -369,18 +369,8 @@ function TemplateEditor({
   onChange: (v: { subject: string; body: string }) => void;
   rotating: boolean;
 }) {
-  type SavedSnippet = { id: string; title: string; subject: string; body: string; category?: string; tag?: string };
-  const categories = [
-    { id: "professional", label: "Professional" },
-    { id: "direct", label: "Direct" },
-    { id: "friendly", label: "Friendly" },
-    { id: "partnership", label: "Partnership" },
-    { id: "followup", label: "Follow-up" },
-    { id: "value", label: "Value / Resource" },
-  ];
+  type SavedSnippet = { id: string; title?: string; subject?: string; body?: string; category?: string; tag?: string };
   const [savedSnippets, setSavedSnippets] = useState<SavedSnippet[]>([]);
-  const [snippetCategory, setSnippetCategory] = useState("friendly");
-  const [snippetPickerOpen, setSnippetPickerOpen] = useState(true);
 
   useEffect(() => {
     const refresh = () => {
@@ -400,10 +390,27 @@ function TemplateEditor({
     };
   }, []);
 
-  const categorySnippets = savedSnippets.filter((snippet) =>
-    (snippet.category ?? categories.find((item) => item.label === snippet.tag)?.id ?? "friendly") === snippetCategory
-  );
+  const loadProfessionalSnippet = () => {
+    const matches = savedSnippets.filter((snippet) =>
+      [snippet.title, snippet.tag, snippet.category].some((value) =>
+        typeof value === "string" && value.toLowerCase().includes("professional")
+      )
+    );
+    if (matches.length === 0) {
+      toast.info("No saved Professional Snippet was found. You can write your message manually.");
+      return;
+    }
+    const snippet = matches[0];
+    onChange({ subject: snippet.subject ?? "", body: snippet.body ?? "" });
+    toast.success("Loaded your saved Professional Snippet into " + title);
+  };
 
+  const subjectChips = ["Quick question", "Partnership", "Exclusive offer"];
+  const toneChips: [string, () => void][] = [
+    ["Professional", loadProfessionalSnippet],
+    ["Casual", () => onChange({ ...value, body: "Hey {name} — saw {company} and had one quick idea for you. Open to it?" })],
+    ["Invitation", () => onChange({ ...value, body: "Hi {name}, I'd love to invite {company} to something we're putting together." })],
+  ];
   return (
     <div className="rounded-[14px] border border-line p-3">
       <div className="flex items-center justify-between">
@@ -415,69 +422,7 @@ function TemplateEditor({
         )}
       </div>
 
-      <div className="mt-2 rounded-xl border border-line bg-soft p-2.5">
-        <button
-          type="button"
-          onClick={() => setSnippetPickerOpen((open) => !open)}
-          className="flex w-full items-center justify-between text-left text-[12px] font-semibold text-brand"
-          aria-expanded={snippetPickerOpen}
-        >
-          <span className="flex items-center gap-1.5"><NotebookPen className="size-3.5" /> Use a saved Snippet (optional)</span>
-          <ChevronDown className={`size-4 transition-transform ${snippetPickerOpen ? "rotate-180" : ""}`} />
-        </button>
-        {snippetPickerOpen && (
-          <div className="mt-2 space-y-2">
-            <div className="flex flex-wrap gap-1.5">
-              {categories.map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  onClick={() => {
-                    setSnippetCategory(category.id);
-                    const matches = savedSnippets.filter((snippet) =>
-                      (snippet.category ?? categories.find((item) => item.label === snippet.tag)?.id ?? "friendly") === category.id
-                    );
-                    if (matches.length === 1) {
-                      onChange({ subject: matches[0].subject ?? "", body: matches[0].body ?? "" });
-                      toast.success(`Loaded ${category.label} Snippet into ${title}`);
-                    } else if (matches.length === 0) {
-                      toast.info(`You haven't saved anything under ${category.label} Snippets yet.`);
-                    }
-                  }}
-                  className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${snippetCategory === category.id ? "border-brand bg-brand text-white" : "border-line bg-white text-ink-soft"}`}
-                >
-                  {category.label}
-                </button>
-              ))}
-            </div>
-            {categorySnippets.length === 0 ? (
-              <p className="rounded-lg bg-white px-2.5 py-2 text-[11px] leading-relaxed text-ink-soft">
-                You haven't saved anything under {categories.find((item) => item.id === snippetCategory)?.label ?? "this"} Snippets yet. You can write your campaign message manually below.
-              </p>
-            ) : (
-              <div className="max-h-36 space-y-1 overflow-y-auto">
-                {categorySnippets.map((snippet) => (
-                  <button
-                    key={snippet.id}
-                    type="button"
-                    onClick={() => {
-                      onChange({ subject: snippet.subject ?? "", body: snippet.body ?? "" });
-                      setSnippetPickerOpen(false);
-                      toast.success("Saved Snippet added to " + title);
-                    }}
-                    className="block w-full rounded-lg border border-line bg-white px-2.5 py-2 text-left"
-                  >
-                    <span className="block truncate text-[11px] font-semibold text-ink">{snippet.title || "Saved snippet"}</span>
-                    <span className="block truncate text-[10px] text-ink-soft">{snippet.subject || "No subject"}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 flex items-center gap-1.5">
+      <div className="mt-2 flex items-center gap-1.5">
         <Pencil className="size-3 text-brand" />
         <span className="label-caps !text-ink">SUBJECT LINE</span>
         <span className="text-[10px] text-ink-soft">(Max 200)</span>
@@ -489,7 +434,14 @@ function TemplateEditor({
         onChange={(e) => onChange({ ...value, subject: e.target.value })}
         className="mt-1.5 w-full rounded-xl border border-line px-3 py-2 text-[12.5px] text-ink outline-none focus:border-ink/30"
       />
-      <div className="mt-1.5 text-right text-[11px] text-ink-soft">{value.subject.length}/200</div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {subjectChips.map((c) => (
+          <Chip key={c} onClick={() => onChange({ ...value, subject: `${c} for {name}` })}>
+            {c}
+          </Chip>
+        ))}
+        <span className="ml-auto text-[11px] text-ink-soft">{value.subject.length}/200</span>
+      </div>
 
       <div className="mt-2.5 flex items-center gap-1.5">
         <FileText className="size-3 text-brand" />
@@ -500,13 +452,20 @@ function TemplateEditor({
         value={value.body}
         placeholder="Write your campaign message here..."
         maxLength={2000}
-        rows={5}
+        rows={4}
         onChange={(e) => onChange({ ...value, body: e.target.value })}
         className="mt-1.5 w-full resize-none rounded-xl border border-line px-3 py-2 text-[12.5px] leading-relaxed text-ink outline-none focus:border-ink/30"
       />
-      <div className="mt-1.5 text-right text-[11px] text-ink-soft">{value.body.length}/2000</div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {toneChips.map(([label, onClick]) => (
+          <Chip key={label} onClick={onClick}>
+            {label}
+          </Chip>
+        ))}
+        <span className="ml-auto text-[11px] text-ink-soft">{value.body.length}/2000</span>
+      </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11.5px] font-medium text-brand">
-        <Info className="size-3" /> Write a new message yourself, or optionally insert one of your saved Snippets.
+        <Info className="size-3" /> Write manually or load your saved Professional Snippet.
       </p>
     </div>
   );
