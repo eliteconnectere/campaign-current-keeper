@@ -65,6 +65,7 @@ export function EliteRadarHub({
   const [newSubject, setNewSubject] = useState("");
   const [newBody, setNewBody] = useState("");
   const [newCat, setNewCat] = useState<string>("friendly");
+  const [activeCategory, setActiveCategory] = useState<string>("friendly");
   useEffect(() => {
     const openAdd = () => { setTab("snippets"); setAddOpen(true); };
     window.addEventListener("ec-snippets-add-open", openAdd as EventListener);
@@ -106,6 +107,7 @@ export function EliteRadarHub({
     const next = [item, ...snippets];
     setSnippets(next);
     persistSnippets(next);
+    setActiveCategory(newCat);
     setNewTitle("");
     setNewSubject("");
     setNewBody("");
@@ -253,6 +255,28 @@ export function EliteRadarHub({
               {addOpen ? "Close form" : "Add a template"}
             </button>
 
+            <div className="flex flex-wrap gap-1.5">
+              {SNIPPET_CATEGORIES.map((category) => {
+                const count = snippets.filter((snippet) =>
+                  (snippet.category ?? SNIPPET_CATEGORIES.find((item) => item.label === snippet.tag)?.id ?? "friendly") === category.id
+                ).length;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => { setActiveCategory(category.id); setNewCat(category.id); }}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold ${
+                      activeCategory === category.id
+                        ? "border-brand bg-brand text-white"
+                        : "border-white/10 bg-white/5 text-white/65"
+                    }`}
+                  >
+                    {category.label} <span className="ml-1 opacity-70">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {addOpen && (
               <div className="space-y-2 rounded-xl border border-white/10 bg-[#121c2e] p-3">
                 <p className="text-[11px] font-semibold text-white/60">
@@ -263,7 +287,7 @@ export function EliteRadarHub({
                     <button
                       key={c.id}
                       type="button"
-                      onClick={() => setNewCat(c.id)}
+                      onClick={() => { setNewCat(c.id); setActiveCategory(c.id); }}
                       className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                         newCat === c.id ? "bg-brand text-white" : "bg-white/10 text-white/70"
                       }`}
@@ -301,14 +325,14 @@ export function EliteRadarHub({
               </div>
             )}
 
-            {snippets.length === 0 && !addOpen && (
+            {snippets.filter((snippet) => (snippet.category ?? SNIPPET_CATEGORIES.find((item) => item.label === snippet.tag)?.id ?? "friendly") === activeCategory).length === 0 && !addOpen && (
               <div className="rounded-xl border border-white/10 bg-[#121c2e] p-6 text-center">
-                <p className="text-[12px] text-white/60">No templates yet.</p>
-                <p className="mt-1 text-[11px] text-white/40">Tap “Add a template” — only what you write is saved.</p>
+                <p className="text-[12px] font-semibold text-white/75">Your {SNIPPET_CATEGORIES.find((category) => category.id === activeCategory)?.label ?? "Selected"} snippets are empty.</p>
+                <p className="mt-1 text-[11px] text-white/40">Save a message under this category to see it here. Nothing is pre-filled.</p>
               </div>
             )}
 
-            {snippets.map((s) => (
+            {snippets.filter((snippet) => (snippet.category ?? SNIPPET_CATEGORIES.find((item) => item.label === snippet.tag)?.id ?? "friendly") === activeCategory).map((s) => (
               <div key={s.id} className="rounded-xl border border-white/10 bg-[#121c2e] p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
