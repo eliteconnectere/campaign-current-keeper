@@ -74,10 +74,11 @@ export type RexLocalMemoryEntry = {
 };
 
 const DB_NAME = "elite-connectere-rex-local-memory";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const CONVERSATIONS = "conversations";
 const SETTINGS = "settings";
 const REX_CONFIG = "rexConfig";
+const REX_STUDIO = "rexStudio";
 const ENTRIES = "memoryEntries";
 const DEFAULT_SETTINGS: RexMemorySettings = { saveHistory: true, rememberContext: true };
 
@@ -97,6 +98,7 @@ function openMemoryDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(CONVERSATIONS)) db.createObjectStore(CONVERSATIONS, { keyPath: "id" });
       if (!db.objectStoreNames.contains(SETTINGS)) db.createObjectStore(SETTINGS, { keyPath: "userId" });
       if (!db.objectStoreNames.contains(REX_CONFIG)) db.createObjectStore(REX_CONFIG, { keyPath: "userId" });
+      if (!db.objectStoreNames.contains(REX_STUDIO)) db.createObjectStore(REX_STUDIO, { keyPath: "id" });
       if (!db.objectStoreNames.contains(ENTRIES)) db.createObjectStore(ENTRIES, { keyPath: "id" });
     };
     request.onsuccess = () => {
@@ -138,6 +140,70 @@ export async function getLocalRexMemorySettings(userId: string): Promise<{ setti
     const row = await requestValue<any>(tx.objectStore(SETTINGS).get(userId));
     await done;
     return { settings: row ? { saveHistory: row.saveHistory !== false, rememberContext: row.rememberContext !== false } : { ...DEFAULT_SETTINGS } };
+  } finally { db.close(); }
+}
+
+export type LocalRexServiceIdentity = {
+  id: string; agent_key: string; display_name: string; status: string;
+  public_metadata: Record<string, unknown>; created_at: string; updated_at: string;
+};
+export type LocalRexServiceRegistration = {
+  id: string; owner_user_id: string; provider: string; status: string;
+  requested_scopes: string[]; required_owner_action: string | null;
+  metadata: Record<string, unknown>; created_at: string; updated_at: string;
+};
+export async function getOrProvisionLocalRexServiceIdentity(userId: string, displayName = "Rex AI Agent"): Promise<LocalRexServiceIdentity> {
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction(REX_STUDIO, "readwrite");
+    const store = tx.objectStore(REX_STUDIO);
+    const done = transactionDone(tx);
+    const key = "identity:" + userId;
+    const existing = await requestValue<LocalRexServiceIdentity | undefined>(store.get(key));
+    if (existing) { await done; return existing; }
+    const now = new Date().toISOString();
+    const identity: LocalRexServiceIdentity = {
+      id: key, agent_key: "rex_" + makeId().replace(/-/g, ""), display_name: String(displayName || "Rex AI Agent").slice(0, 80),
+      status: "provisioned", public_metadata: {}, created_at: now, updated_at: now,
+    };
+    store.put(identity);
+    await done;
+    return identity;
+  } finally { db.close(); }
+}
+export async function listLocalRexServiceRegistrations(userId: string): Promise<LocalRexServiceRegistration[]> {
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction(REX_STUDIO, "readonly");
+    const done = transactionDone(tx);
+    const rows = await requestValue<LocalRexServiceRegistration[]>(tx.objectStore(REX_STUDIO).getAll());
+    await done;
+    return rows.filter(row => row.owner_user_id === userId).sort((a,b)=>b.updated_at.localeCompare(a.updated_at)).slice(0,50);
+  } finally { db.close(); }
+}
+export async function prepareLocalRexProviderRegistration(userId: string, provider: string): Promise<LocalRexServiceRegistration> {
+  const cleanProvider = String(provider || "").trim().slice(0,120);
+  if (cleanProvider.length < 2) throw new Error("Enter a provider name with at least two characters.");
+  const db = await openMemoryDb();
+  try {
+    const tx = db.transaction(REX_STUDIO, "readwrite");
+    const store = tx.objectStore(REX_STUDIO);
+    const done = transactionDone(tx);
+    const identityKey = "identity:" + userId;
+    const identity = await requestValue<LocalRexServiceIdentity | undefined>(store.get(identityKey));
+    if (!identity) throw new Error("Rex's local service identity is not ready. Refresh and try again.");
+    const id = "registration:" + userId + ":" + cleanProvider.toLowerCase();
+    const existing = await requestValue<LocalRexServiceRegistration | undefined>(store.get(id));
+    const now = new Date().toISOString();
+    const row: LocalRexServiceRegistration = {
+      id, owner_user_id: userId, provider: cleanProvider, status: "prepared", requested_scopes: existing?.requested_scopes ?? [],
+      required_owner_action: "Review the provider's official registration requirements and complete any identity verification or consent it requires.",
+      metadata: { preparation: "Provider requirements recorded locally. No external submission or credential was created." },
+      created_at: existing?.created_at ?? now, updated_at: now,
+    };
+    store.put(row);
+    await done;
+    return row;
   } finally { db.close(); }
 }
 
