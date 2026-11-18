@@ -2400,12 +2400,44 @@ function removeCategory(kind: "duplicate" | "risky") {
       toast.info("Elite Engine is already running; no second campaign was started.");
       return false;
     }
-    if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
-      setOneSecAsk(true);
-      return false;
-    }
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       toast.error("You're offline — reconnect to start a campaign.");
+      return false;
+    }
+    if (!validated || generated.length === 0) {
+      guideTo("recipients", "Validate your list first — that is what builds the campaign.");
+      return false;
+    }
+
+    // Rebuild the execution preview from the current editor values. This ensures
+    // messages typed or imported from Snippets after validation are not stale.
+    const previouslySent = new Set([
+      ...generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase()),
+      ...sentRecipientEmailsRef.current,
+    ]);
+    const currentGenerated = buildGenerated(recipients).map((g) => ({
+      ...g,
+      sent: previouslySent.has(g.email.trim().toLowerCase()),
+    }));
+    generatedRef.current = currentGenerated;
+    setGenerated(currentGenerated);
+
+    const selectedPreview = currentGenerated.filter((g) => g.id >= from && g.id <= to && !g.sent);
+    const incompleteMessages = selectedPreview.filter((g) => !g.subject.trim() || !g.body.trim());
+    if (selectedPreview.length === 0) {
+      toast.info("There are no unsent recipients in the selected range.");
+      return false;
+    }
+    if (incompleteMessages.length > 0) {
+      toast.error("Your campaign message isn't ready yet.", {
+        description: "Write a subject and message, or import a saved Snippet using one of the buttons below. Every selected recipient needs a complete message before execution.",
+        duration: 8000,
+      });
+      return false;
+    }
+
+    if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
+      setOneSecAsk(true);
       return false;
     }
     if (mode === "elite" && !canSendElite) {
@@ -2415,10 +2447,6 @@ function removeCategory(kind: "duplicate" | "risky") {
           ? "Connect a Google profile — Elite Engine sends from your own Gmail."
           : "Every connected profile has reached its limit. Connect another to continue.",
       );
-      return false;
-    }
-    if (!validated || generated.length === 0) {
-      guideTo("recipients", "Validate your list first — that is what builds the campaign.");
       return false;
     }
     if (!cleanupHandled && (counts.duplicate > 0 || counts.risky > 0)) {
@@ -2438,7 +2466,7 @@ function removeCategory(kind: "duplicate" | "risky") {
     const doneEmails = new Set(
       generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase())
     );
-    const inRange = generated.filter((g) => g.id >= from && g.id <= to);
+    const inRange = currentGenerated.filter((g) => g.id >= from && g.id <= to);
     if (inRange.length === 0) {
       toast.error("No recipients found in selected range.");
       return false;
