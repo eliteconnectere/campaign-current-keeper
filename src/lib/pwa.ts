@@ -28,36 +28,60 @@ export async function registerAppWorker() {
     );
     return;
   }
+
   try {
-    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-    // Save the homepage and workspace HTML in the same cache used by the
-    // Workbox NetworkFirst navigation handler, so Safari can reopen them offline.
+    const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    await navigator.serviceWorker.ready;
+
+    // Cache the actual HTML documents, not just the JavaScript bundle. Safari must
+    // be able to satisfy a fresh top-level navigation to these routes offline.
     const cacheNavigationShells = async () => {
       if (!navigator.onLine || !("caches" in window)) return;
       try {
         const cache = await caches.open("ec-pages");
+        const accept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
         for (const path of ["/", "/app"]) {
           const url = new URL(path, window.location.origin);
-          const response = await fetch(url.toString(), {
+          const request = new Request(url.toString(), {
             method: "GET",
             credentials: "same-origin",
-            cache: "no-store",
-            headers: { Accept: "text/html" },
+            headers: { Accept: accept },
           });
+          const response = await fetch(request, { cache: "no-store", redirect: "follow" });
           const contentType = response.headers.get("content-type") ?? "";
-          if (!response.ok || response.redirected || !contentType.includes("text/html")) continue;
-          await cache.put(new Request(url.toString(), { method: "GET" }), response.clone());
+          if (!response.ok || response.redirected || !contentType.includes("text/html")) {
+            console.warn("[PWA] Navigation shell was not cacheable", path, response.status, response.url);
+            continue;
+          }
+          await cache.put(request, response.clone());
+          // Verify the same URL can be read back before considering it cached.
+          const cached = await cache.match(request);
+          if (!cached || !cached.headers.get("content-type")?.includes("text/html")) {
+            console.warn("[PWA] Navigation shell cache verification failed", path);
+          } else {
+            console.info("[PWA] Offline navigation shell cached", path);
+          }
         }
-      } catch {
-        // A failed pre-cache must never prevent the online app from opening.
+      } catch (error) {
+        console.warn("[PWA] Could not cache navigation shells", error);
       }
     };
-    await navigator.serviceWorker.ready;
-    await cacheNavigationShells();
+
+    // The first page may still be uncontrolled during installation. The cache
+    // write is safe either way; retries cover the first activation and app boot.
+    void cacheNavigationShells();
+    window.setTimeout(() => void cacheNavigationShells(), 1500);
+    window.setTimeout(() => void cacheNavigationShells(), 5000);
     window.addEventListener("online", () => void cacheNavigationShells());
     window.addEventListener("pageshow", () => void cacheNavigationShells());
-  } catch {
-    /* installable app is optional */
+    registration.addEventListener("updatefound", () => {
+      const worker = registration.installing;
+      worker?.addEventListener("statechange", () => {
+        if (worker.state === "activated") void cacheNavigationShells();
+      });
+    });
+  } catch (error) {
+    console.warn("[PWA] Service worker setup failed; online app remains available", error);
   }
 }
 
