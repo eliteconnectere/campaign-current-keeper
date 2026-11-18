@@ -390,26 +390,28 @@ function TemplateEditor({
     };
   }, []);
 
-  const loadProfessionalSnippet = () => {
-    const matches = savedSnippets.filter((snippet) =>
-      [snippet.title, snippet.tag, snippet.category].some((value) =>
-        typeof value === "string" && value.toLowerCase().includes("professional")
+  // Every shortcut is only a lookup into the user's saved Snippets.
+  // Never inject preset subject lines or message bodies from hardcoded copy.
+  const loadSavedSnippet = (label: string) => {
+    const needle = label.trim().toLowerCase();
+    const snippet = savedSnippets.find((item) =>
+      [item.title, item.tag, item.category].some((field) =>
+        typeof field === "string" && field.toLowerCase().includes(needle)
       )
     );
-    if (matches.length === 0) {
-      toast.info("No saved Professional Snippet was found. You can write your message manually.");
+    if (!snippet) {
+      toast.info(`No saved "${label}" Snippet was found. Your subject and message were left unchanged.`);
       return;
     }
-    const snippet = matches[0];
     onChange({ subject: snippet.subject ?? "", body: snippet.body ?? "" });
-    toast.success("Loaded your saved Professional Snippet into " + title);
+    toast.success(`Loaded your saved "${label}" Snippet into ${title}`);
   };
 
   const subjectChips = ["Quick question", "Partnership", "Exclusive offer"];
   const toneChips: [string, () => void][] = [
-    ["Professional", loadProfessionalSnippet],
-    ["Casual", () => onChange({ ...value, body: "Hey {name} — saw {company} and had one quick idea for you. Open to it?" })],
-    ["Invitation", () => onChange({ ...value, body: "Hi {name}, I'd love to invite {company} to something we're putting together." })],
+    ["Professional", () => loadSavedSnippet("Professional")],
+    ["Casual", () => loadSavedSnippet("Casual")],
+    ["Invitation", () => loadSavedSnippet("Invitation")],
   ];
   return (
     <div className="rounded-[14px] border border-line p-3">
@@ -436,7 +438,7 @@ function TemplateEditor({
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {subjectChips.map((c) => (
-          <Chip key={c} onClick={() => onChange({ ...value, subject: `${c} for {name}` })}>
+          <Chip key={c} onClick={() => loadSavedSnippet(c)}>
             {c}
           </Chip>
         ))}
@@ -465,7 +467,7 @@ function TemplateEditor({
         <span className="ml-auto text-[11px] text-ink-soft">{value.body.length}/2000</span>
       </div>
       <p className="mt-2 flex items-center gap-1.5 text-[11.5px] font-medium text-brand">
-        <Info className="size-3" /> Write manually or load your saved Professional Snippet.
+        <Info className="size-3" /> Write manually or load a matching message saved in Snippets.
       </p>
     </div>
   );
