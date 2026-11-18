@@ -6,9 +6,9 @@ import { RexAvatar } from "@/features/assist/RexAvatar";
 import { showTip } from "@/features/workspace/HandTour";
 import { askEliteAssist, type AssistAccount, type AssistMsg } from "@/lib/assist.functions";
 import { sendPrivateChatMessageForRex } from "@/lib/chat.functions";
-import { createRexOperationApproval, consumeRexOperationApproval, finishRexOperationApproval, readPrivateChatForRex, readRexWorkspaceData, saveRexMemoryEntry, deleteRexMemoryEntry } from "@/lib/rex.operator.functions";
+import { createRexOperationApproval, consumeRexOperationApproval, finishRexOperationApproval, readPrivateChatForRex, readRexWorkspaceData } from "@/lib/rex.operator.functions";
 import { getRexConfig } from "@/lib/rex.functions";
-import { appendRexConversationMessages, getRexConversation, getRexMemorySettings, listRexConversations, type RexMemorySettings } from "@/lib/rex-conversation.functions";
+import { appendLocalRexConversationMessages, buildLocalRexMemoryContext, deleteLocalRexMemoryEntry, getLocalRexConversation, getLocalRexMemorySettings, listLocalRexConversations, saveLocalRexMemoryEntry, type RexMemorySettings } from "@/features/assist/local-memory";
 import { approveRexCampaign } from "@/lib/campaign.functions";
 import { NAVIGATION_DESTINATIONS, REX_AUTONOMY_EXPERIMENT } from "@/features/assist/navigation.registry";
 import { searchApplicationCatalog, type SearchableDestination } from "@/features/assist/application-search";
@@ -140,15 +140,14 @@ export function EliteAssist({
     let active = true;
     void (async () => {
       try {
-        const prefs = await getRexMemorySettings();
+        const prefs = await getLocalRexMemorySettings(uid);
         if (!active) return;
         setMemorySettings(prefs.settings);
-        const { conversations } = await listRexConversations();
+        const { conversations } = await listLocalRexConversations(uid);
         let keepBlankChat = !prefs.settings.saveHistory;
         if (!resumeConversationId) {
           try { keepBlankChat = keepBlankChat || window.localStorage.getItem(newChatStorageKey) === "1"; } catch {}
         }
-        
         if (active && keepBlankChat) {
           try {
             const draft = window.sessionStorage.getItem(`rex-live-session:${uid}`);
@@ -162,8 +161,8 @@ export function EliteAssist({
         }
         if (active && !keepBlankChat && conversations[0]) {
           const targetId = resumeConversationId && conversations.some(item => item.id === resumeConversationId) ? resumeConversationId : conversations[0].id;
-          const restored = await getRexConversation({ data: { conversationId: targetId } });
-          if (active) {
+          const restored = await getLocalRexConversation(uid, targetId);
+          if (active && restored.conversation) {
             conversationId.current = restored.conversation.id;
             try { window.localStorage.setItem(`rex-last-conversation:${uid}`, restored.conversation.id); } catch {}
             const restoredMessages = restored.messages.map((message, index) => {
@@ -190,27 +189,26 @@ export function EliteAssist({
                 : "[[REX_EXPIRED:" + approvalId + ":" + pending[2] + "]]";
               return { role: message.role, content: message.content.replace(pending[0], replacement) };
             });
+
             setMsgs(restoredMessages);
             const latestAssistantReply = [...restoredMessages].reverse().find(message => message.role === "assistant");
             setSuggests(latestAssistantReply ? extractSuggests(latestAssistantReply.content) : []);
           }
         }
       } catch (error) {
-        console.error("Could not restore Rex conversation", error);
+        console.error("Could not restore Rex local conversation", error);
+        toast.error("Rex could not open device memory. Your saved data has not been deleted.");
       } finally {
         if (active) setHistoryReady(true);
       }
     })();
     return () => { active = false; };
-  }, [resumeConversationId]);
+  }, [uid, resumeConversationId]);
 
   async function persistMessage(role: "user" | "assistant", content: string) {
     if (!memorySettings.saveHistory) return;
     try {
-      const saved = await appendRexConversationMessages({ data: {
-        conversationId: conversationId.current,
-        messages: [{ role, content }],
-      } });
+      const saved = await appendLocalRexConversationMessages(uid, conversationId.current, [{ role, content }]);
       if (saved.conversationId) {
         conversationId.current = saved.conversationId;
         try {
@@ -219,8 +217,8 @@ export function EliteAssist({
         } catch {}
       }
     } catch (error) {
-      console.error("Could not save Rex conversation", error);
-      toast.error("Rex could not save this conversation. Please check your connection.");
+      console.error("Could not save Rex device-local conversation", error);
+      toast.error("Rex could not save to this device. Check available browser storage; nothing was sent to Supabase.");
     }
   }
   const [text, setText] = useState(initialPrompt);
@@ -770,32 +768,18 @@ export function EliteAssist({
   async function approveMemoryDelete(memoryId: string, automatic = false) {
     if (busy && !automatic) return;
     setBusy(true);
-    let approvalId = "";
     try {
-      const scope = { memoryId };
-      const receipt = await createRexOperationApproval({ data: {
-        title: "Delete saved Rex memory",
-        summary: "Permanently delete only saved memory entry " + memoryId + ".",
-        plan: [{ action: "delete_memory", label: "Delete the exact saved memory entry", scope }],
-      } });
-      approvalId = receipt.approval.id;
-      const authorized = await consumeRexOperationApproval({ data: { approvalId } }) as any;
-      if (authorized.plan.length !== 1 || authorized.plan[0]?.action !== "delete_memory" || authorized.plan[0]?.scope.memoryId !== memoryId) {
-        throw new Error("The approved memory deletion scope did not match.");
-      }
-      await deleteRexMemoryEntry({ data: { memoryId } });
-      await finishRexOperationApproval({ data: { approvalId, ok: true, result: "Deleted the exact approved Rex memory entry." } });
+      await deleteLocalRexMemoryEntry(uid, memoryId);
       const tag = "[[REX_MEMORY_DELETE_APPROVAL:" + encodeURIComponent(JSON.stringify({ memoryId })) + "]]";
       setMsgs(current => current.map(message => message.role === "assistant" && message.content.includes(tag)
         ? { ...message, content: message.content.replace(tag, "[[REX_MEMORY_DELETE_DONE]]") }
         : message));
-      const reply = "Deleted the approved saved Rex memory entry.";
+      const reply = "Removed the approved memory from this device.";
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
       await persistMessage("assistant", reply);
-      toast.success("Saved Rex memory deleted.");
+      toast.success("Local Rex memory updated.");
     } catch (error) {
-      if (approvalId) { try { await finishRexOperationApproval({ data: { approvalId, ok: false, result: "Memory deletion failed." } }); } catch {} }
-      const reply = error instanceof Error ? error.message : "The saved Rex memory was not deleted.";
+      const reply = error instanceof Error ? error.message : "The local memory could not be updated.";
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
       await persistMessage("assistant", reply);
       toast.error(reply);
@@ -805,35 +789,23 @@ export function EliteAssist({
   async function approveMemorySave(payload: { category: string; content: string }, automatic = false) {
     if (busy && !automatic) return;
     setBusy(true);
-    let approvalId = "";
     try {
-      const receipt = await createRexOperationApproval({ data: {
-        title: "Save Rex memory",
-        summary: "Save the exact user-approved memory under " + payload["category"] + ".",
-        plan: [{ action: "save_memory", label: "Save this memory for future Rex conversations", scope: payload }],
-      } });
-      approvalId = receipt.approval.id;
-      const authorized = await consumeRexOperationApproval({ data: { approvalId } }) as any;
-      if (authorized.plan.length !== 1 || authorized.plan[0]?.action !== "save_memory" || authorized.plan[0]?.scope.content !== payload["content"] || authorized.plan[0]?.scope.category !== payload["category"]) throw new Error("The approved memory did not match.");
-      await saveRexMemoryEntry({ data: { category: payload["category"], content: payload["content"], source: "user-approved" } });
-      await finishRexOperationApproval({ data: { approvalId, ok: true, result: "Saved the approved Rex memory." } });
+      await saveLocalRexMemoryEntry(uid, payload.category, payload.content);
       const tag = "[[REX_MEMORY_SAVE_APPROVAL:" + encodeURIComponent(JSON.stringify(payload)) + "]]";
-      const reply = "Saved this memory for future Rex conversations under " + payload["category"] + ".";
+      const reply = "Saved this memory on this device for future Rex conversations under " + payload.category + ".";
       setMsgs(current => current.map(message => message.role === "assistant" && message.content.includes(tag)
         ? { ...message, content: message.content.replace(tag, "[[REX_MEMORY_SAVE_DONE]]") }
         : message));
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
       await persistMessage("assistant", reply);
-      toast.success("Rex memory saved.");
+      toast.success("Rex memory saved on this device.");
     } catch (error) {
-      if (approvalId) { try { await finishRexOperationApproval({ data: { approvalId, ok: false, result: "Memory save failed." } }); } catch {} }
-      const reply = error instanceof Error ? error.message : "The memory was not saved.";
+      const reply = error instanceof Error ? error.message : "The memory was not saved on this device.";
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
       await persistMessage("assistant", reply);
       toast.error(reply);
     } finally { setBusy(false); }
   }
-
 
   async function stageCampaignDraftUpload(raw: string, fileName: string) {
     const draft = String(raw ?? "").replace(/\\u0000/g, "").trim();
@@ -1199,6 +1171,13 @@ export function EliteAssist({
       // areas on every turn. Reading this context is ordinary assistant work;
       // outbound campaign and Private Chat sends remain separately approval-gated.
       const requestAccount: AssistAccount = {};
+      if (memorySettings.rememberContext) {
+        try {
+          requestAccount["localMemoryContext"] = await buildLocalRexMemoryContext(uid, conversationId.current, 8000);
+        } catch (memoryError) {
+          console.warn("[Rex] Device-local memory could not be read:", memoryError);
+        }
+      }
       try {
         if (onReadActiveWorkspace) {
           const preferences = await getRexConfig();
