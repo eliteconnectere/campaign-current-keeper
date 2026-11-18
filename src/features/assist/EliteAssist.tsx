@@ -1010,8 +1010,8 @@ export function EliteAssist({
           const recipientCount = Number(preview.recipientCount ?? 0);
           const subject = String(preview.subject ?? "").trim();
           const body = String(preview.body ?? "").trim();
-          if (!subject || !body) {
-            throw new Error("No subject/body in the workspace yet. Set the message (or Template A/B), then say OK send again.");
+          if (!body) {
+            throw new Error("There is no message body in the workspace yet. Add a message (or Template A/B), then say OK send again. A subject is optional.");
           }
           if (recipientCount < 1) {
             throw new Error("No eligible recipients in the workspace yet. Import a list first, then say OK send.");
@@ -1233,9 +1233,9 @@ export function EliteAssist({
       if (recipientDraftMatch?.[1]) {
         try {
           const draft = JSON.parse(decodeURIComponent(recipientDraftMatch[1])) as { subject?: unknown; body?: unknown };
-          const subject = typeof draft.subject === "string" ? draft.subject.trim().slice(0, 200) : "";
+          const subject = /\b(without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i.test(content) ? "" : (typeof draft.subject === "string" ? draft.subject.trim().slice(0, 200) : "");
           const body = typeof draft.body === "string" ? draft.body.trim().slice(0, 2000) : "";
-          if (subject && body) {
+          if (body) {
             const readableDraft = rawReply.replace(recipientDraftMatch[0], "").trim();
             if (!isExplicitSendRequest(content)) {
               const discussion = readableDraft + "\n\nApplied to Template A in your workspace. Nothing was sent.";
@@ -1270,12 +1270,12 @@ export function EliteAssist({
             const recipientCount = Number(preview.recipientCount ?? 0);
             const previewSubject = String(preview.subject ?? subject).trim();
             const previewBody = String(preview.body ?? body).trim();
-            if (!recipientCount || !previewSubject || !previewBody) {
+            if (!recipientCount || !previewBody) {
               throw new Error("The message was placed in Template A, but I could not prepare a complete recipient and message preview. Nothing was sent.");
             }
             const campaignId = "engine-approval-" + crypto.randomUUID();
             engineSessionApprovalIds.current.add(campaignId);
-            const finalPreview = "I added the approved draft to Template A and prepared the campaign for " + recipientCount.toLocaleString() + " eligible recipients." + importValidationSummary + "\n\nSubject: " + previewSubject + "\n\nMessage:\n" + previewBody + "\n\nPlease review this exact campaign. Nothing has been sent.\n\n[[APPROVE_CAMPAIGN:" + campaignId + ":" + new Date().toISOString() + ":send]]";
+            const finalPreview = "I added the approved draft to Template A and prepared the campaign for " + recipientCount.toLocaleString() + " eligible recipients." + importValidationSummary + (previewSubject ? "\n\nSubject: " + previewSubject : "\n\nNo subject") + "\n\nMessage:\n" + previewBody + "\n\nPlease review this exact campaign. Nothing has been sent.\n\n[[APPROVE_CAMPAIGN:" + campaignId + ":" + new Date().toISOString() + ":send]]";
             setLastSource("ai");
             setSuggests([]);
             setMsgs([...next, { role: "assistant", content: finalPreview }]);
@@ -1380,18 +1380,18 @@ export function EliteAssist({
         try {
           const payload = JSON.parse(decodeURIComponent(snippetCreateNow[1])) as { title?: unknown; subject?: unknown; body?: unknown; category?: unknown };
           const title = typeof payload["title"] === "string" ? payload["title"].trim().slice(0, 120) : "";
-          const subject = typeof payload.subject === "string" ? payload.subject.trim().slice(0, 200) : "";
+          const subject = /\b(without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i.test(content) ? "" : (typeof payload.subject === "string" ? payload.subject.trim().slice(0, 200) : "");
           const body = typeof payload["body"] === "string" ? payload["body"].trim().slice(0, 4000) : "";
           const categories = ["direct","friendly","partnership","followup","value"] as const;
           const category = typeof payload["category"] === "string" && categories.includes(payload["category"] as typeof categories[number]) ? payload["category"] : "friendly";
-          if (!title || !subject || !body) throw new Error("A Snippet needs a title, subject and complete message body.");
+          if (!title || !body) throw new Error("A Snippet needs a title and complete message body. A subject is optional.");
           const key = "ec.radar-snippets";
           const existing = JSON.parse(window.localStorage.getItem(key) ?? "[]");
           if (!Array.isArray(existing)) throw new Error("Your Snippets library could not be read safely. Nothing was saved.");
           const item = { id: "rex-" + crypto.randomUUID(), title, subject, body, category, tag: ({direct:"Direct",friendly:"Friendly",partnership:"Partnership",followup:"Follow-up",value:"Value / Resource"} as Record<string,string>)[category] };
           window.localStorage.setItem(key, JSON.stringify([item, ...existing].slice(0, 500)));
           window.dispatchEvent(new CustomEvent("ec-snippets-updated"));
-          const saved = "Saved **" + title + "** to Elite Radar Hub → Snippets. The subject and message were saved exactly as shown. Nothing was added to Planner or Campaign Templates, and nothing was sent.";
+          const saved = "Saved **" + title + "** to Elite Radar Hub → Snippets. " + (subject ? "The subject and message were saved exactly as shown." : "The message was saved without a subject.") + " Nothing was added to Planner or Campaign Templates, and nothing was sent.";
           setLastSource("local");
           setSuggests([]);
           setMsgs([...next, { role: "assistant", content: saved }]);
@@ -1412,9 +1412,9 @@ export function EliteAssist({
         try {
           const payload = JSON.parse(decodeURIComponent(templateWriteNow[1])) as { slot?: unknown; subject?: unknown; body?: unknown };
           const slot = payload.slot === "B" ? "B" : "A";
-          const subject = typeof payload.subject === "string" ? payload.subject.slice(0, 200) : "";
+          const subject = /\b(without (?:a |the )?subject|no subject|leave (?:the )?subject blank|don['’]t (?:add|include|write) (?:a )?subject)\b/i.test(content) ? "" : (typeof payload.subject === "string" ? payload.subject.slice(0, 200) : "");
           const body = typeof payload["body"] === "string" ? payload["body"].slice(0, 2000) : "";
-          if (!subject.trim() || !body.trim()) throw new Error("I need a complete subject and message before I can continue.");
+          if (!body.trim()) throw new Error("I need a message body before I can continue. A subject is optional.");
 
           // REX_TEMPLATE_WRITE_NOW means apply the template now.
           // Implement/apply does NOT require a send command. Only the prepare+approval path does.
@@ -1459,7 +1459,7 @@ export function EliteAssist({
           const recipientCount = Number(preview.recipientCount ?? 0);
           const previewSubject = String(preview.subject ?? subject).trim();
           const previewBody = String(preview.body ?? body).trim();
-          if (!recipientCount || !previewSubject || !previewBody) {
+          if (!recipientCount || !previewBody) {
             throw new Error("The draft was saved to Template " + slot + ", but a complete recipient and message preview could not be prepared. Nothing was sent.");
           }
           const campaignId = "engine-approval-" + crypto.randomUUID();
