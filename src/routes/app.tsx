@@ -371,6 +371,7 @@ function TemplateEditor({
 }) {
   type SavedSnippet = { id: string; title: string; subject: string; body: string; category?: string; tag?: string };
   const categories = [
+    { id: "professional", label: "Professional" },
     { id: "direct", label: "Direct" },
     { id: "friendly", label: "Friendly" },
     { id: "partnership", label: "Partnership" },
@@ -379,7 +380,7 @@ function TemplateEditor({
   ];
   const [savedSnippets, setSavedSnippets] = useState<SavedSnippet[]>([]);
   const [snippetCategory, setSnippetCategory] = useState("friendly");
-  const [snippetPickerOpen, setSnippetPickerOpen] = useState(false);
+  const [snippetPickerOpen, setSnippetPickerOpen] = useState(true);
 
   useEffect(() => {
     const refresh = () => {
@@ -431,7 +432,18 @@ function TemplateEditor({
                 <button
                   key={category.id}
                   type="button"
-                  onClick={() => setSnippetCategory(category.id)}
+                  onClick={() => {
+                    setSnippetCategory(category.id);
+                    const matches = savedSnippets.filter((snippet) =>
+                      (snippet.category ?? categories.find((item) => item.label === snippet.tag)?.id ?? "friendly") === category.id
+                    );
+                    if (matches.length === 1) {
+                      onChange({ subject: matches[0].subject ?? "", body: matches[0].body ?? "" });
+                      toast.success(`Loaded ${category.label} Snippet into ${title}`);
+                    } else if (matches.length === 0) {
+                      toast.info(`You haven't saved anything under ${category.label} Snippets yet.`);
+                    }
+                  }}
                   className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${snippetCategory === category.id ? "border-brand bg-brand text-white" : "border-line bg-white text-ink-soft"}`}
                 >
                   {category.label}
