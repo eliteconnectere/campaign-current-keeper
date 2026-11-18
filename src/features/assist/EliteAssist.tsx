@@ -7,7 +7,7 @@ import { showTip } from "@/features/workspace/HandTour";
 import { askEliteAssist, type AssistAccount, type AssistMsg } from "@/lib/assist.functions";
 import { sendPrivateChatMessageForRex } from "@/lib/chat.functions";
 import { createRexOperationApproval, consumeRexOperationApproval, finishRexOperationApproval, readPrivateChatForRex, readRexWorkspaceData } from "@/lib/rex.operator.functions";
-import { getRexConfig } from "@/lib/rex.functions";
+import { getLocalRexConfig } from "@/features/assist/local-memory";
 import { appendLocalRexConversationMessages, buildLocalRexMemoryContext, deleteLocalRexMemoryEntry, getLocalRexConversation, getLocalRexMemorySettings, listLocalRexConversations, saveLocalRexMemoryEntry, type RexMemorySettings } from "@/features/assist/local-memory";
 import { approveRexCampaign } from "@/lib/campaign.functions";
 import { NAVIGATION_DESTINATIONS, REX_AUTONOMY_EXPERIMENT } from "@/features/assist/navigation.registry";
@@ -128,7 +128,7 @@ export function EliteAssist({
 }) {
   const newChatStorageKey = `rex-new-chat:${uid}`;
   const [rexName, setRexName] = useState("Rex");
-  useEffect(() => { void getRexConfig().then(r => setRexName(r.config.displayName)).catch(() => {}); }, []);
+  useEffect(() => { void getLocalRexConfig(uid).then(r => setRexName(r.config.displayName)).catch(() => {}); }, []);
   const [msgs, setMsgs] = useState<AssistMsg[]>([]);
   const engineSessionApprovalIds = useRef(new Set<string>());
   const actionApprovalIds = useRef(new Map<string, "pause" | "resume" | "stop">());
@@ -547,7 +547,7 @@ export function EliteAssist({
             ? Object.fromEntries(Object.keys(value as Record<string, unknown>).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])]))
             : value;
         if (JSON.stringify(canonical(authorized.plan)) !== JSON.stringify(canonical(plan))) throw new Error("The approved campaign workflow did not match the requested scope.");
-        const rexPreferences = await getRexConfig();
+        const rexPreferences = await getLocalRexConfig(uid);
         if (!rexPreferences.config.allowCampaignExecution) throw new Error("Campaign execution through Rex is disabled in Rex Studio. No campaign data was inspected and nothing was sent.");
         // The approval receipt is consumed before any workspace preflight or send operation.
         await onPrepareCampaign();
@@ -571,7 +571,7 @@ export function EliteAssist({
       if (mode === "send") {
         throw new Error("This is an older Rex campaign approval, not an active Elite Engine approval. I have not queued or sent it. Ask Rex to prepare the current Elite Engine session and use its new Approve & Send Now button.");
       }
-      const rexPreferences = await getRexConfig();
+      const rexPreferences = await getLocalRexConfig(uid);
       if (!rexPreferences.config.allowCampaignExecution) throw new Error("Campaign execution through Rex is disabled in Rex Studio. No campaign was approved or sent.");
       if (mode === "schedule" && !rexPreferences.config.allowCampaignScheduling) throw new Error("Campaign scheduling through Rex is disabled in Rex Studio. No campaign was scheduled.");
       const result = await approveRexCampaign({ data: { campaignId, scheduledAt } });
@@ -1215,7 +1215,7 @@ export function EliteAssist({
       }
       try {
         if (onReadActiveWorkspace) {
-          const preferences = await getRexConfig();
+          const preferences = await getLocalRexConfig(uid);
           const enabledAreas = [
             "campaign_summary", "recipients", "drafts", "sending_capacity",
             "campaign_runs", "activity", "planner", "smart_fill_history",
