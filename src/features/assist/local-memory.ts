@@ -91,8 +91,9 @@ export async function getLocalRexMemorySettings(userId: string): Promise<{ setti
   const db = await openMemoryDb();
   try {
     const tx = db.transaction(SETTINGS, "readonly");
+    const done = transactionDone(tx);
     const row = await requestValue<any>(tx.objectStore(SETTINGS).get(userId));
-    await transactionDone(tx);
+    await done;
     return { settings: row ? { saveHistory: row.saveHistory !== false, rememberContext: row.rememberContext !== false } : { ...DEFAULT_SETTINGS } };
   } finally { db.close(); }
 }
@@ -101,8 +102,9 @@ export async function saveLocalRexMemorySettings(userId: string, settings: RexMe
   const db = await openMemoryDb();
   try {
     const tx = db.transaction(SETTINGS, "readwrite");
+    const done = transactionDone(tx);
     tx.objectStore(SETTINGS).put({ userId, saveHistory: settings.saveHistory, rememberContext: settings.rememberContext, updated_at: new Date().toISOString() });
-    await transactionDone(tx);
+    await done;
     return { settings };
   } finally { db.close(); }
 }
@@ -111,8 +113,9 @@ export async function listLocalRexConversations(userId: string): Promise<{ conve
   const db = await openMemoryDb();
   try {
     const tx = db.transaction(CONVERSATIONS, "readonly");
+    const done = transactionDone(tx);
     const rows = await requestValue<StoredConversation[]>(tx.objectStore(CONVERSATIONS).getAll());
-    await transactionDone(tx);
+    await done;
     const conversations = rows
       .filter(row => row.userId === userId)
       .map(({ id, title, updated_at, last_message_at, created_at }) => ({ id, title, updated_at, last_message_at, created_at }))
@@ -125,8 +128,9 @@ export async function getLocalRexConversation(userId: string, conversationId: st
   const db = await openMemoryDb();
   try {
     const tx = db.transaction(CONVERSATIONS, "readonly");
+    const done = transactionDone(tx);
     const row = await requestValue<StoredConversation | undefined>(tx.objectStore(CONVERSATIONS).get(conversationId));
-    await transactionDone(tx);
+    await done;
     if (!row || row.userId !== userId) return { conversation: null, messages: [] };
     const { id, title, updated_at, last_message_at, created_at, messages } = row;
     return { conversation: { id, title, updated_at, last_message_at, created_at }, messages: Array.isArray(messages) ? messages : [] };
@@ -148,6 +152,7 @@ export async function appendLocalRexConversationMessages(
     const store = tx.objectStore(CONVERSATIONS);
     const now = new Date().toISOString();
     const id = conversationId || makeId();
+    const done = transactionDone(tx);
     const read = store.get(id);
     const result = await new Promise<StoredConversation>((resolve, reject) => {
       read.onsuccess = () => {
@@ -169,7 +174,7 @@ export async function appendLocalRexConversationMessages(
       };
       read.onerror = () => reject(read.error ?? new Error("Could not read the local conversation."));
     });
-    await transactionDone(tx);
+    await done;
     return { conversationId: result.id, stored: clean.length };
   } catch (error) {
     try { txAbortSafe(db); } catch {}
@@ -195,8 +200,9 @@ export async function saveLocalRexMemoryEntry(userId: string, category: string, 
   const db = await openMemoryDb();
   try {
     const tx = db.transaction(ENTRIES, "readwrite");
+    const done = transactionDone(tx);
     tx.objectStore(ENTRIES).add(entry);
-    await transactionDone(tx);
+    await done;
     return entry;
   } finally { db.close(); }
 }
@@ -206,9 +212,10 @@ export async function deleteLocalRexMemoryEntry(userId: string, memoryId: string
   try {
     const tx = db.transaction(ENTRIES, "readwrite");
     const store = tx.objectStore(ENTRIES);
+    const done = transactionDone(tx);
     const row = await requestValue<RexLocalMemoryEntry | undefined>(store.get(memoryId));
     if (row?.userId === userId) store.delete(memoryId);
-    await transactionDone(tx);
+    await done;
   } finally { db.close(); }
 }
 
@@ -217,11 +224,12 @@ export async function buildLocalRexMemoryContext(userId: string, currentConversa
   const db = await openMemoryDb();
   try {
     const tx = db.transaction([CONVERSATIONS, ENTRIES], "readonly");
+    const done = transactionDone(tx);
     const [conversationRows, entryRows] = await Promise.all([
       requestValue<StoredConversation[]>(tx.objectStore(CONVERSATIONS).getAll()),
       requestValue<RexLocalMemoryEntry[]>(tx.objectStore(ENTRIES).getAll()),
     ]);
-    await transactionDone(tx);
+    await done;
     const parts: string[] = [];
     for (const entry of entryRows.filter(row => row.userId === userId).sort((a, b) => b.updated_at.localeCompare(a.updated_at))) {
       parts.push("[Saved memory: " + entry.category + "] " + entry.content);
