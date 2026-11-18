@@ -148,7 +148,7 @@ ONLY SEND NEEDS APPROVAL — EVERYTHING ELSE IS DIRECT AGENT WORK
 
 DRAFT → SHOW → TWEAK → APPLY / SEND (NO DRAMA)
 - If the user asks to write a message for the campaign or for Template A/B/both:
-  1) Write a complete usable subject + body and call write_campaign_content so it lands in the workspace template(s) immediately (use {name}/{company} when useful).
+  1) By default, write a complete usable subject + body and call write_campaign_content so it lands in the workspace template(s) immediately (use {name}/{company} when useful). If the owner explicitly asks to remove the subject, omit it, or leave it completely blank, pass an empty subject string; do not insert “(No subject)” or another placeholder, and do not ask for a replacement subject. Preserve the agreed body.
   2) Confirm what was written into which template. Nothing is sent.
   3) A send approval appears only when they ask to send/execute — then show the exact message and the Approve control.
 - Do not lecture "you have not read this". Showing the draft is the preview. Keep copy short: Subject, Body, then act when they instruct implement or send.
@@ -968,7 +968,7 @@ do not invent it.
                 }
               }, {
                 name: "write_campaign_content",
-                description: "Write subject and body into Campaign Template A or B in the owner workspace immediately. Call this whenever the user asks to write, draft, create, replace, update, implement, or apply a message for Template A, Template B, both templates, or the campaign message. Prefer writing into the workspace over chat-only drafts. Call once per template when both are requested. This tool never sends email; only campaign send requires the final in-app approval.",
+                description: "Write the email subject and body into Campaign Template A or B in the owner workspace immediately. Normally provide a clear subject and body. If the owner explicitly asks for no subject, an omitted subject, or a completely blank subject line, pass subject as an empty string and preserve the body exactly; never require a replacement subject or insert a placeholder. Call this whenever the user asks to write, draft, create, replace, update, implement, or apply a message for Template A, Template B, both templates, or the campaign message. Prefer writing into the workspace over chat-only drafts. Call once per template when both are requested. This tool never sends email; only campaign send requires the final in-app approval.",
                 parameters: {
                   type: "OBJECT",
                   properties: {
@@ -976,7 +976,7 @@ do not invent it.
                     subject: { type: "STRING", description: "Email subject, up to 200 characters." },
                     body: { type: "STRING", description: "Email body, up to 2000 characters." }
                   },
-                  required: ["template_slot","subject","body"]
+                  required: ["template_slot","body"]
                 }
               }, {
                 name: "update_workspace_setting",
@@ -1243,9 +1243,10 @@ do not invent it.
         const slot = writeCampaignContentCall.args?.template_slot === "B" ? "B" : "A";
         const subject = String(writeCampaignContentCall.args?.subject ?? "").trim().slice(0, 200);
         const body = String(writeCampaignContentCall.args?.body ?? "").trim().slice(0, 2_000);
-        if (!subject || !body.trim()) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need both a subject and an email body before I can prepare a template update.";
+        if (!body.trim()) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need an email body before I can prepare a template update. A subject is optional when you ask to leave it blank.";
         const payload = encodeURIComponent(JSON.stringify({ slot, subject, body }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I wrote the email content for Template " + slot + ".\n\nSubject: " + subject + "\n\n" + body + "\n\n[[REX_TEMPLATE_WRITE_NOW:" + payload + "]]" + (prepareCall ? "\\n\\n[[REX_PREPARE_CAMPAIGN]]" : "");
+        const subjectDisplay = subject ? "Subject: " + subject + "\n\n" : "";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I wrote the email content for Template " + slot + ".\n\n" + subjectDisplay + body + "\n\n[[REX_TEMPLATE_WRITE_NOW:" + payload + "]]" + (prepareCall ? "\\n\\n[[REX_PREPARE_CAMPAIGN]]" : "");
       }
       if (saveMemoryCall) {
         const category = String(saveMemoryCall.args?.category ?? "context").trim().slice(0, 40);
