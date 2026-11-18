@@ -952,7 +952,6 @@ export function EliteAssist({
           body = body.replace(/\n+Applied to Template [AB] in your workspace\. Nothing was sent\.?\s*$/i, "").trim();
           body = body.replace(/\n+Applied to Template [AB]\.?\s*$/i, "").trim();
           if (body) {
-            await persistMessage("user", content);
             onApplyCampaignTemplate(slot, "", body);
             const reply = "Removed the subject from Template " + slot + ". The existing email body was kept unchanged. Nothing was sent.";
             setLastSource("local");
