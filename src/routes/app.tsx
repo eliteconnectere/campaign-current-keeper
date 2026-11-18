@@ -2442,7 +2442,6 @@ function removeCategory(kind: "duplicate" | "risky") {
       setRangeConfirmOpen(true);
       return false;
     }
-    rangeConfirmedRef.current = false;
 
     if (!skipPace && engine !== "paused" && !oneSecOkRef.current) {
       setOneSecAsk(true);
@@ -2532,6 +2531,7 @@ function removeCategory(kind: "duplicate" | "risky") {
     }
 
     // Manual execution stays in Elite Engine. Rex approval is only for campaigns explicitly prepared in Rex.
+    rangeConfirmedRef.current = false;
     setAutoResumePending(false);
     setEngine("sending");
     try {
