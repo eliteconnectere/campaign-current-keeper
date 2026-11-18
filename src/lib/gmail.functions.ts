@@ -257,7 +257,7 @@ export type SendResult =
 export const sendGmailMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator(
-    (input: { to: string; subject: string; body: string; profileId?: string | null; permanentSendProtection?: boolean }) => {
+    (input: { to: string; subject?: string; body: string; profileId?: string | null; permanentSendProtection?: boolean }) => {
       if (!input || typeof input.to !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.to)) {
         throw new Error("A valid recipient address is required.");
       }
