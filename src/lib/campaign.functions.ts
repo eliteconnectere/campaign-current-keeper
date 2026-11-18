@@ -21,7 +21,7 @@ async function requireCampaignEntitlement(userId: string) {
 
 export const enqueueCampaign = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { name?: string; subject: string; body: string; delaySeconds?: number; recipients: Array<{ email: string; name?: string; subject?: string; body?: string }> }) => {
+  .inputValidator((input: { name?: string; subject?: string; body: string; delaySeconds?: number; recipients: Array<{ email: string; name?: string; subject?: string; body?: string }> }) => {
     if (!input || !Array.isArray(input.recipients) || input.recipients.length === 0) throw new Error("At least one recipient is required.");
     const recipients = input.recipients.map((recipient) => ({
       email: String(recipient.email ?? "").trim().toLowerCase(),
