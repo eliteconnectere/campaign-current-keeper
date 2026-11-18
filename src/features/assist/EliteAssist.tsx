@@ -128,7 +128,7 @@ export function EliteAssist({
 }) {
   const newChatStorageKey = `rex-new-chat:${uid}`;
   const [rexName, setRexName] = useState("Rex");
-  useEffect(() => { void getLocalRexConfig(uid).then(r => setRexName(r.config.displayName)).catch(() => {}); }, []);
+  useEffect(() => { let active = true; void getLocalRexConfig(uid).then(r => { if (active) setRexName(r.config.displayName); }).catch(() => {}); return () => { active = false; }; }, [uid]);
   const [msgs, setMsgs] = useState<AssistMsg[]>([]);
   const engineSessionApprovalIds = useRef(new Set<string>());
   const actionApprovalIds = useRef(new Map<string, "pause" | "resume" | "stop">());
