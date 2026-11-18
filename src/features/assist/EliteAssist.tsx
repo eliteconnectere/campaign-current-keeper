@@ -1571,7 +1571,7 @@ export function EliteAssist({
             let body = previousReviewedDraft.content.slice((subjectMatch.index ?? 0) + (subjectMatch[0]?.length ?? 0)).trim();
             body = body.replace(/^(?:\*\*Body:\*\*|Body:|Message:)\s*/i, "");
             body = (body.split(/\n\n(?:This is (?:still )?only a chat draft|Nothing has been sent|Tell me what you'd like adjusted)/i)[0] ?? "").trim().slice(0, 2000);
-            if (subject && body) {
+            if (body) {
               onApplyCampaignTemplate("A", subject, body);
               await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
             }
@@ -1609,7 +1609,7 @@ export function EliteAssist({
             const recipientCount = Number(preview.recipientCount ?? 0);
             const subject = String(preview.subject ?? "").trim();
             const body = String(preview.body ?? "").trim();
-            if (!subject || !body || recipientCount < 1) {
+            if (!body || recipientCount < 1) {
               throw new Error("I couldn't produce a complete campaign preview with a subject, message body and eligible recipient count. Nothing was sent.");
             }
             const previewText = "Campaign prepared for your review.\n\nRecipients: " + recipientCount.toLocaleString() +
@@ -2092,7 +2092,7 @@ function AssistantReply({
   try {
     if (templateWriteApproval?.[1]) {
       const value = JSON.parse(decodeURIComponent(templateWriteApproval[1])) as { slot?: unknown; subject?: unknown; body?: unknown };
-      if (typeof value.subject === "string" && typeof value.body === "string") templateWritePayload = {
+      if ((typeof value.subject === "string" || value.subject == null) && typeof value.body === "string") templateWritePayload = {
         slot: value.slot === "B" ? "B" : "A",
         subject: value.subject,
         body: value.body,
