@@ -38,9 +38,10 @@ import { RexChatFab } from "@/features/assist/RexChatFab";
 
 // Chat tables are newer than the generated types; use an untyped handle.
 const db = typedClient as unknown as SupabaseClient;
-const SUPABASE_URL = "https://irzbexiuhiufyjwjzlux.supabase.co";
-const ANON =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlyemJleGl1aGl1Znlqd2p6bHV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMDg1OTcsImV4cCI6MjEwNDc4NDU5N30.MHeyrGhje1UT9KwJkAJax23fjnsazQut_8MOQQHgZdo";
+// Always upload to the same Supabase project used by the authenticated client.
+// This avoids stale project URLs/keys when the backend project is replaced.
+const SUPABASE_URL = typedClient.supabaseUrl;
+const ANON = typedClient.supabaseKey;
 
 type Profile = { user_id: string; display_name: string; username: string };
 type Request = { id: string; sender_id: string; receiver_id: string; status: string; created_at: string };
