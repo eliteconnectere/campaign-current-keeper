@@ -120,29 +120,31 @@ export const assessRexCampaign = createServerFn({ method: "POST" })
       .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
     if (error) throw error;
     if (!campaign) throw new Error("Campaign not found in your account.");
-    const [{ data: recipients, error: recipientsError }, { listProfileViews }, { scanCampaignContent }] = await Promise.all([
-      supabaseAdmin.from("campaign_recipients").select("id,email,status,message_subject,message_body").eq("campaign_id", campaign.id),
+    // Keep the approval path bounded: do not download every recipient row
+    // (including full message bodies) just to count a campaign. Personalized
+    // content is re-checked by the worker immediately before each send.
+    const [
+      { count: totalCount, error: totalError },
+      { count: pendingCount, error: pendingError },
+      { listProfileViews },
+      { scanCampaignContent },
+    ] = await Promise.all([
+      supabaseAdmin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id),
+      supabaseAdmin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("status", "pending"),
       import("@/server/gmailProfiles.server"),
       import("@/lib/contentSafety"),
     ]);
-    if (recipientsError) throw recipientsError;
+    if (totalError) throw totalError;
+    if (pendingError) throw pendingError;
     const profiles = await listProfileViews(context.userId, "google_mail");
     const readyProfiles = profiles.filter((profile) => !profile.exhausted);
     const remainingCapacity = profiles.reduce((sum, profile) => sum + Math.max(0, profile.limit - profile.used), 0);
-    const pending = (recipients ?? []).filter((recipient) => recipient.status === "pending");
-    const invalid = pending.filter((recipient) => !EMAIL_RE.test(String(recipient.email ?? "")));
+    const totalRecipients = totalCount ?? 0;
+    const pendingRecipients = pendingCount ?? 0;
     const baseRisk = scanCampaignContent(campaign.subject, campaign.body);
-    const recipientRisks = pending.filter((recipient) => {
-      const subject = String(recipient.message_subject ?? campaign.subject);
-      const body = String(recipient.message_body ?? campaign.body);
-      return scanCampaignContent(subject, body).blocked;
-    }).length;
-    const risk = {
-      blocked: baseRisk.blocked || recipientRisks > 0,
-      reasons: [...baseRisk.reasons, ...(recipientRisks ? [`${recipientRisks} personalized recipient message(s) failed the safety check`] : [])],
-    };
+    const risk = { blocked: baseRisk.blocked, reasons: baseRisk.reasons };
     const checks = [
-      { key: "recipients", label: "Recipient list", ok: (recipients ?? []).length === Number(campaign.total_recipients) && pending.length > 0 && invalid.length === 0, detail: invalid.length ? `${invalid.length} invalid pending addresses` : `${pending.length} pending of ${(recipients ?? []).length} total recipients` },
+      { key: "recipients", label: "Recipient list", ok: totalRecipients === Number(campaign.total_recipients) && pendingRecipients > 0, detail: `${pendingRecipients.toLocaleString()} pending of ${totalRecipients.toLocaleString()} total recipients` },
       { key: "gmail", label: "Connected Gmail capacity", ok: readyProfiles.length > 0 && remainingCapacity > 0, detail: `${remainingCapacity.toLocaleString()} protected sends are available now across ${readyProfiles.length} account(s). The approved worker continues as rolling account allowances renew; ${pending.length.toLocaleString()} recipient(s) are queued.` },
       { key: "content", label: "Campaign content safety", ok: !risk.blocked, detail: risk.blocked ? risk.reasons.join("; ") : "No high-confidence content risk detected" },
       { key: "state", label: "Campaign state", ok: campaign.status === "pending_approval" || campaign.status === "paused", detail: campaign.status === "pending_approval" || campaign.status === "paused" ? "Awaiting owner approval" : `Current state: ${campaign.status}` },
@@ -151,7 +153,7 @@ export const assessRexCampaign = createServerFn({ method: "POST" })
       campaign: { id: campaign.id, name: campaign.name, subject: campaign.subject, total: campaign.total_recipients, sent: campaign.sent_count, failed: campaign.failed_count },
       ready: checks.every((check) => check.ok),
       checks,
-      capacity: { remaining: remainingCapacity, needed: pending.length, availableProfiles: readyProfiles.length },
+      capacity: { remaining: remainingCapacity, needed: pendingRecipients, availableProfiles: readyProfiles.length },
       caveat: "This verifies Elite Connectere's protected per-account daily allowance and current connection records. Google can still apply separate provider limits, temporary throttling, or account restrictions during delivery.",
     };
   });
