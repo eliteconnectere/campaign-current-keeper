@@ -680,15 +680,48 @@ function Workspace() {
   const uidRef = useRef<string | null>(null);
   uidRef.current = uid;
   useEffect(() => {
-    if (!uid) { setPersistedCampaignWorkspace({ campaigns: [], recipients: [], sentLast24Hours: 0, source: 'server_campaigns', truncated: false }); return; }
+    if (!uid) {
+      setPersistedCampaignWorkspace({ campaigns: [], recipients: [], sentLast24Hours: 0, source: 'server_campaigns', truncated: false });
+      return;
+    }
+
     let active = true;
-    const refresh = () => {
-      void getRexCampaignWorkspaceData().then((result) => { if (active) setPersistedCampaignWorkspace(result); })
-        .catch((error) => console.warn('Rex could not refresh server campaign records.', error));
+    let inFlight = false;
+    let lastRefreshAt = 0;
+
+    // Keep campaign data fresh without making every open browser tab poll
+    // continuously. Hidden tabs stop polling and refresh when the user returns.
+    const refresh = async (force = false) => {
+      if (!active || inFlight || document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (!force && now - lastRefreshAt < 30_000) return;
+      inFlight = true;
+      lastRefreshAt = now;
+      try {
+        const result = await getRexCampaignWorkspaceData();
+        if (active) setPersistedCampaignWorkspace(result);
+      } catch (error) {
+        console.warn("Rex could not refresh server campaign records.", error);
+      } finally {
+        inFlight = false;
+      }
     };
-    refresh();
-    const timer = window.setInterval(refresh, 60000);
-    return () => { active = false; window.clearInterval(timer); };
+
+    // Spread initial requests across users instead of synchronizing them on
+    // the minute boundary after a large sign-in wave.
+    const initialTimer = window.setTimeout(() => { void refresh(true); }, Math.floor(Math.random() * 15_000));
+    const interval = window.setInterval(() => { void refresh(); }, 120_000);
+    const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
+    return () => {
+      active = false;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [uid]);
   const [authChecked, setAuthChecked] = useState(false);
   const [gmailBusy, setGmailBusy] = useState(false);
