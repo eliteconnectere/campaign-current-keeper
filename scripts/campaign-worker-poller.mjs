@@ -1,7 +1,7 @@
 const endpoint = process.env.CAMPAIGN_PROCESSOR_URL || "https://eliteconnectere.site/api/public/process-campaigns";
 const secret = process.env.CAMPAIGN_WORKER_SECRET;
 const intervalMs = Number(process.env.POLL_INTERVAL_MS || 45_000);
-const timeoutMs = Number(process.env.POLL_TIMEOUT_MS || 12_000);
+const timeoutMs = Number(process.env.POLL_TIMEOUT_MS || 50_000);
 
 if (!secret) {
   console.error(JSON.stringify({
@@ -44,7 +44,8 @@ console.info(JSON.stringify({
   at: new Date().toISOString(),
   endpoint,
   pollIntervalMs: intervalMs,
-  requestTimeoutMs: timeoutMs
+  requestTimeoutMs: timeoutMs,
+  workerRequestTimeoutTargetMs: 50_000
 }));
 
 while (true) {

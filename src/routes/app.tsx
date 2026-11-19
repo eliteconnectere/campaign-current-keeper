@@ -607,6 +607,77 @@ function Workspace() {
   const [connectNote, setConnectNote] = useState("");
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [engine, setEngine] = useState<"idle" | "sending" | "paused">("idle");
+
+  type ScreenWakeLockSentinel = { released: boolean; release: () => Promise<void>; addEventListener: (type: "release", listener: () => void) => void };
+  const wakeLockRef = useRef<ScreenWakeLockSentinel | null>(null);
+  const wakeLockNoticeRef = useRef(false);
+
+  // Keep the device display awake only while a campaign is active.
+  // Browsers release screen locks when the page is hidden, so reacquire on return.
+  useEffect(() => {
+    let disposed = false;
+
+    const releaseWakeLock = async () => {
+      const lock = wakeLockRef.current;
+      if (!lock) return;
+      wakeLockRef.current = null;
+      try {
+        await lock.release();
+      } catch (error) {
+        console.warn("[campaign-wake-lock] Could not release screen wake lock.", error);
+      }
+    };
+
+    const requestWakeLock = async () => {
+      if (engine !== "sending" || document.visibilityState !== "visible") return;
+      const wakeLockApi = (navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<ScreenWakeLockSentinel> } }).wakeLock;
+      if (!wakeLockApi) {
+        console.warn("[campaign-wake-lock] Screen Wake Lock API is not supported by this browser.");
+        if (!wakeLockNoticeRef.current) {
+          wakeLockNoticeRef.current = true;
+          toast.warning("This browser cannot keep the screen awake during a campaign. Use a browser with Screen Wake Lock support.");
+        }
+        return;
+      }
+      if (wakeLockRef.current && !wakeLockRef.current.released) return;
+
+      try {
+        const lock = await wakeLockApi.request("screen");
+        if (disposed || engine !== "sending" || document.visibilityState !== "visible") {
+          await lock.release();
+          return;
+        }
+        wakeLockRef.current = lock;
+        lock.addEventListener("release", () => {
+          if (wakeLockRef.current === lock) wakeLockRef.current = null;
+        });
+      } catch (error) {
+        console.warn("[campaign-wake-lock] The browser did not grant a screen wake lock.", error);
+        if (!wakeLockNoticeRef.current) {
+          wakeLockNoticeRef.current = true;
+          toast.warning("Elite Connectere could not keep the screen awake. Check browser support and device power settings.");
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && engine === "sending") {
+        void requestWakeLock();
+      } else {
+        void releaseWakeLock();
+      }
+    };
+
+    if (engine === "sending") void requestWakeLock();
+    else void releaseWakeLock();
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      void releaseWakeLock();
+    };
+  }, [engine]);
   const engineRef = useRef<"idle" | "sending" | "paused">("idle");
   engineRef.current = engine;
   const [autoResumePending, setAutoResumePending] = useState(false);

@@ -120,30 +120,32 @@ export const assessRexCampaign = createServerFn({ method: "POST" })
       .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
     if (error) throw error;
     if (!campaign) throw new Error("Campaign not found in your account.");
-    const [{ data: recipients, error: recipientsError }, { listProfileViews }, { scanCampaignContent }] = await Promise.all([
-      supabaseAdmin.from("campaign_recipients").select("id,email,status,message_subject,message_body").eq("campaign_id", campaign.id),
+    // Keep the approval path bounded: do not download every recipient row
+    // (including full message bodies) just to count a campaign. Personalized
+    // content is re-checked by the worker immediately before each send.
+    const [
+      { count: totalCount, error: totalError },
+      { count: pendingCount, error: pendingError },
+      { listProfileViews },
+      { scanCampaignContent },
+    ] = await Promise.all([
+      supabaseAdmin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id),
+      supabaseAdmin.from("campaign_recipients").select("id", { count: "exact", head: true }).eq("campaign_id", campaign.id).eq("status", "pending"),
       import("@/server/gmailProfiles.server"),
       import("@/lib/contentSafety"),
     ]);
-    if (recipientsError) throw recipientsError;
+    if (totalError) throw totalError;
+    if (pendingError) throw pendingError;
     const profiles = await listProfileViews(context.userId, "google_mail");
     const readyProfiles = profiles.filter((profile) => !profile.exhausted);
     const remainingCapacity = profiles.reduce((sum, profile) => sum + Math.max(0, profile.limit - profile.used), 0);
-    const pending = (recipients ?? []).filter((recipient) => recipient.status === "pending");
-    const invalid = pending.filter((recipient) => !EMAIL_RE.test(String(recipient.email ?? "")));
+    const totalRecipients = totalCount ?? 0;
+    const pendingRecipients = pendingCount ?? 0;
     const baseRisk = scanCampaignContent(campaign.subject, campaign.body);
-    const recipientRisks = pending.filter((recipient) => {
-      const subject = String(recipient.message_subject ?? campaign.subject);
-      const body = String(recipient.message_body ?? campaign.body);
-      return scanCampaignContent(subject, body).blocked;
-    }).length;
-    const risk = {
-      blocked: baseRisk.blocked || recipientRisks > 0,
-      reasons: [...baseRisk.reasons, ...(recipientRisks ? [`${recipientRisks} personalized recipient message(s) failed the safety check`] : [])],
-    };
+    const risk = { blocked: baseRisk.blocked, reasons: baseRisk.reasons };
     const checks = [
-      { key: "recipients", label: "Recipient list", ok: (recipients ?? []).length === Number(campaign.total_recipients) && pending.length > 0 && invalid.length === 0, detail: invalid.length ? `${invalid.length} invalid pending addresses` : `${pending.length} pending of ${(recipients ?? []).length} total recipients` },
-      { key: "gmail", label: "Connected Gmail capacity", ok: readyProfiles.length > 0 && remainingCapacity > 0, detail: `${remainingCapacity.toLocaleString()} protected sends are available now across ${readyProfiles.length} account(s). The approved worker continues as rolling account allowances renew; ${pending.length.toLocaleString()} recipient(s) are queued.` },
+      { key: "recipients", label: "Recipient list", ok: totalRecipients === Number(campaign.total_recipients) && pendingRecipients > 0, detail: `${pendingRecipients.toLocaleString()} pending of ${totalRecipients.toLocaleString()} total recipients` },
+      { key: "gmail", label: "Connected Gmail capacity", ok: readyProfiles.length > 0 && remainingCapacity > 0, detail: `${remainingCapacity.toLocaleString()} protected sends are available now across ${readyProfiles.length} account(s). The approved worker continues as rolling account allowances renew; ${pendingRecipients.toLocaleString()} recipient(s) are queued.` },
       { key: "content", label: "Campaign content safety", ok: !risk.blocked, detail: risk.blocked ? risk.reasons.join("; ") : "No high-confidence content risk detected" },
       { key: "state", label: "Campaign state", ok: campaign.status === "pending_approval" || campaign.status === "paused", detail: campaign.status === "pending_approval" || campaign.status === "paused" ? "Awaiting owner approval" : `Current state: ${campaign.status}` },
     ];
@@ -151,7 +153,7 @@ export const assessRexCampaign = createServerFn({ method: "POST" })
       campaign: { id: campaign.id, name: campaign.name, subject: campaign.subject, total: campaign.total_recipients, sent: campaign.sent_count, failed: campaign.failed_count },
       ready: checks.every((check) => check.ok),
       checks,
-      capacity: { remaining: remainingCapacity, needed: pending.length, availableProfiles: readyProfiles.length },
+      capacity: { remaining: remainingCapacity, needed: pendingRecipients, availableProfiles: readyProfiles.length },
       caveat: "This verifies Elite Connectere's protected per-account daily allowance and current connection records. Google can still apply separate provider limits, temporary throttling, or account restrictions during delivery.",
     };
   });
@@ -179,58 +181,18 @@ export const approveRexCampaign = createServerFn({ method: "POST" })
       .in("status", ["pending_approval", "paused"]).select("id,status,scheduled_at").maybeSingle();
     if (error) throw error;
     if (!updated) throw new Error("This campaign is no longer awaiting approval. Refresh the campaign list.");
-    const isDueNow = new Date(data.scheduledAt).getTime() <= Date.now() + 30_000;
-    if (isDueNow) {
-      const secret = process.env["CAMPAIGN_WORKER_SECRET"] || process.env["CRON_SECRET"];
-      const host = process.env["VERCEL_URL"]
-        ? `https://${process.env["VERCEL_URL"]}`
-        : process.env["NEXT_PUBLIC_SITE_URL"] || "https://eliteconnectere.site";
-      if (!secret) {
-        await supabaseAdmin.from("campaigns").update({
-          status: "pending_approval", approved_at: null, scheduled_at: null,
-          next_run_at: new Date().toISOString(), last_error: "Approval was recorded but the worker secret is not configured; no email was sent.",
-          updated_at: new Date().toISOString(),
-        }).eq("id", data.campaignId).eq("status", "queued");
-        throw new Error("Rex could not start the campaign because CAMPAIGN_WORKER_SECRET (or CRON_SECRET) is not configured. No emails were sent; configure the worker secret and approve again.");
-      }
-      let workerResponse: Response;
-      try {
-        workerResponse = await fetch(`${host}/api/public/process-campaigns`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${secret}` },
-          body: JSON.stringify({ campaignId: data.campaignId }),
-          signal: AbortSignal.timeout(55_000),
-        });
-      } catch {
-        await supabaseAdmin.from("campaigns").update({
-          status: "pending_approval", approved_at: null, scheduled_at: null,
-          next_run_at: new Date().toISOString(), last_error: "Worker dispatch failed before execution could be confirmed.",
-          updated_at: new Date().toISOString(),
-        }).eq("id", data.campaignId).eq("status", "queued");
-        throw new Error("Rex could not reach the campaign worker. The campaign was returned to approval and no start was confirmed.");
-      }
-      if (!workerResponse.ok) {
-        const detail = (await workerResponse.text().catch(() => "")).slice(0, 240);
-        await supabaseAdmin.from("campaigns").update({
-          status: "pending_approval", approved_at: null, scheduled_at: null,
-          next_run_at: new Date().toISOString(), last_error: `Worker rejected dispatch (HTTP ${workerResponse.status}).`,
-          updated_at: new Date().toISOString(),
-        }).eq("id", data.campaignId).eq("status", "queued");
-        throw new Error(`Rex could not start the campaign worker (HTTP ${workerResponse.status}). No start was confirmed. ${detail}`);
-      }
-      const workerResult = await workerResponse.json().catch(() => null) as { ok?: boolean; processed?: number } | null;
-      if (!workerResult?.ok) {
-        throw new Error("The worker endpoint responded without confirming execution. Check campaign status before approving again.");
-      }
-      const { data: liveCampaign } = await supabaseAdmin.from("campaigns")
-        .select("id,status,started_at,sent_count,failed_count")
-        .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
-      if (!liveCampaign || !["running", "completed", "failed", "paused"].includes(liveCampaign.status)) {
-        throw new Error("Approval was accepted, but the worker has not confirmed that execution started. Check campaign status; do not approve again.");
-      }
-      return { ok: true as const, campaign: { ...updated, ...liveCampaign }, assessment, worker: workerResult, offerMonitor: !(data as any).enableMonitor };
-    }
-    return { ok: true as const, campaign: updated, assessment, worker: null, offerMonitor: !(data as any).enableMonitor };
+    // Approval only enqueues work. Do not fan out one HTTP worker request per
+    // user click: a simultaneous launch would create thousands of serverless
+    // invocations. The persistent Railway poller drains this shared queue with
+    // a database-enforced global concurrency cap.
+    return {
+      ok: true as const,
+      campaign: updated,
+      assessment,
+      worker: null,
+      queued: true as const,
+      offerMonitor: !(data as any).enableMonitor,
+    };
   });
 
 export const cancelRexScheduledCampaign = createServerFn({ method: "POST" })
