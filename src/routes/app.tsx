@@ -625,16 +625,6 @@ function Workspace() {
       });
     return () => { active = false; };
   }, [signedIn]);
-  useEffect(() => {
-    if (!signedIn) {
-      setTeamCanManage(false);
-      return;
-    }
-    import("@/lib/team.functions")
-      .then(({ listMyTeamSeats }) => listMyTeamSeats())
-      .then((res) => setTeamCanManage(Boolean(res?.canManage)))
-      .catch(() => setTeamCanManage(false));
-  }, [signedIn]);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -757,7 +747,6 @@ function Workspace() {
   const [premiumOnly, setPremiumOnly] = useState<PlanId[] | undefined>(undefined);
   const [teamOpen, setTeamOpen] = useState(false);
   const [teamReturnToSettings, setTeamReturnToSettings] = useState(false);
-  const [teamCanManage, setTeamCanManage] = useState(false);
   const [radarOpen, setRadarOpen] = useState(false);
   const [radarTab, setRadarTab] = useState<"radar" | "vault" | "snippets" | "monitor">("radar");
   const [assistOpen, setAssistOpen] = useState(false);
