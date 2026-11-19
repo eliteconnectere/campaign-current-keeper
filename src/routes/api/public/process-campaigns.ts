@@ -6,11 +6,13 @@ const CONNECTOR_ID = "google_mail";
 // of simultaneous campaigns, and leases guarantee one worker per campaign.
 const CAMPAIGNS_PER_WORKER = 10;
 const MAX_PER_CAMPAIGN_RUN = 1000;
-// Time budget per worker run. Set WORKER_BUDGET_MS in hosting env:
-// Vercel Hobby ~8000, Vercel Pro ~50000, Railway/VPS up to 280000.
+// Keep each HTTP invocation bounded. Long-lived throughput comes from repeated
+// queue polling, not from holding one serverless request open for several minutes.
+// The 45s ceiling leaves time for the HTTP response to complete before dispatchers
+// time out. A hosting platform may impose a lower hard limit.
 const WORKER_BUDGET_MS = (() => {
   const raw = Number(typeof process !== "undefined" ? process.env?.["WORKER_BUDGET_MS"] : NaN);
-  return Number.isFinite(raw) && raw >= 5_000 ? Math.min(raw, 280_000) : 8_000;
+  return Number.isFinite(raw) && raw >= 5_000 ? Math.min(raw, 45_000) : 8_000;
 })();
 const MAX_ATTEMPTS = 3;
 
@@ -221,7 +223,7 @@ async function processCampaigns(onlyCampaignId?: string) {
     p_campaign_id: onlyCampaignId ?? null,
     p_now: now,
     p_lease_seconds: 120,
-    p_max_concurrent: 100000,
+    p_max_concurrent: 100,
   });
   if (error) return Response.json({ ok: false, error: "Unable to load approved campaigns." }, { status: 500 });
 
