@@ -608,7 +608,9 @@ function Workspace() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [engine, setEngine] = useState<"idle" | "sending" | "paused">("idle");
 
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  type ScreenWakeLockSentinel = { released: boolean; release: () => Promise<void>; addEventListener: (type: "release", listener: () => void) => void };
+  const wakeLockRef = useRef<ScreenWakeLockSentinel | null>(null);
+  const wakeLockNoticeRef = useRef(false);
 
   // Keep the device display awake only while a campaign is active.
   // Browsers release screen locks when the page is hidden, so reacquire on return.
@@ -628,14 +630,19 @@ function Workspace() {
 
     const requestWakeLock = async () => {
       if (engine !== "sending" || document.visibilityState !== "visible") return;
-      if (!("wakeLock" in navigator)) {
+      const wakeLockApi = (navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<ScreenWakeLockSentinel> } }).wakeLock;
+      if (!wakeLockApi) {
         console.warn("[campaign-wake-lock] Screen Wake Lock API is not supported by this browser.");
+        if (!wakeLockNoticeRef.current) {
+          wakeLockNoticeRef.current = true;
+          toast.warning("This browser cannot keep the screen awake during a campaign. Use a browser with Screen Wake Lock support.");
+        }
         return;
       }
       if (wakeLockRef.current && !wakeLockRef.current.released) return;
 
       try {
-        const lock = await navigator.wakeLock.request("screen");
+        const lock = await wakeLockApi.request("screen");
         if (disposed || engine !== "sending" || document.visibilityState !== "visible") {
           await lock.release();
           return;
@@ -646,6 +653,10 @@ function Workspace() {
         });
       } catch (error) {
         console.warn("[campaign-wake-lock] The browser did not grant a screen wake lock.", error);
+        if (!wakeLockNoticeRef.current) {
+          wakeLockNoticeRef.current = true;
+          toast.warning("Elite Connectere could not keep the screen awake. Check browser support and device power settings.");
+        }
       }
     };
 
