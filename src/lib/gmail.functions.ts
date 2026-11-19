@@ -317,7 +317,8 @@ export const sendGmailMessage = createServerFn({ method: "POST" })
     const {
       listProfileRows,
       listProfileViews,
-      ensureIdentityUsage,
+      batchEnsureIdentityUsage,
+      normaliseEmail,
       usageOf,
       decryptKey,
       recordSend,
@@ -348,11 +349,12 @@ export const sendGmailMessage = createServerFn({ method: "POST" })
       return { ok: false, reason: "no_profiles", profiles: [] };
     }
 
-    const eligible: typeof rows = [];
-    for (const row of rows) {
-      const usage = usageOf(await ensureIdentityUsage(row.email_key));
-      if (!usage.exhausted) eligible.push(row);
-    }
+    const usageMap = await batchEnsureIdentityUsage(rows.map((row) => row.email_key));
+    const eligible = rows.filter((row) => {
+      const usage = usageMap.get(normaliseEmail(row.email_key));
+      if (!usage) throw new Error("Gmail identity usage is missing for a connected profile.");
+      return !usageOf(usage).exhausted;
+    });
     if (eligible.length === 0) {
       await releaseClaim();
       return {
