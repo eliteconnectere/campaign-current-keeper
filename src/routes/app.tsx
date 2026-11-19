@@ -611,6 +611,17 @@ function Workspace() {
   engineRef.current = engine;
   const [autoResumePending, setAutoResumePending] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [teamCanManage, setTeamCanManage] = useState(false);
+  useEffect(() => {
+    if (!signedIn) {
+      setTeamCanManage(false);
+      return;
+    }
+    import("@/lib/team.functions")
+      .then(({ listMyTeamSeats }) => listMyTeamSeats())
+      .then((res) => setTeamCanManage(Boolean(res?.canManage)))
+      .catch(() => setTeamCanManage(false));
+  }, [signedIn]);
 
   useEffect(() => {
     if (!signedIn) return;
