@@ -57,33 +57,63 @@ export function normaliseEmail(email: string): string {
 
 /** Reads (creating if absent) the protected sending record for a Gmail address. */
 export async function ensureIdentityUsage(emailKey: string): Promise<IdentityUsage> {
-  const db = await admin();
-  const { data } = await db
-    .from("gmail_identity_usage")
-    .select("email_key, daily_limit, sent_count, sent_date, exhausted_until, window_started_at")
-    .eq("email_key", emailKey)
-    .maybeSingle();
-  if (data) return data as IdentityUsage;
+  const usage = await batchEnsureIdentityUsage([emailKey]);
+  const row = usage.get(normaliseEmail(emailKey));
+  if (!row) throw new Error("Gmail identity usage could not be initialized.");
+  return row;
+}
 
-  const fresh = {
-    email_key: emailKey,
-    daily_limit: randomDailyLimit(),
-    sent_count: 0,
-    sent_date: today(),
-    exhausted_until: null,
-    window_started_at: new Date().toISOString(),
-  };
-  const { error } = await db.from("gmail_identity_usage").insert(fresh);
-  if (error) {
-    const { data: again } = await db
+/**
+ * Fetches usage rows in one batch and safely creates only missing identities.
+ * ignoreDuplicates prevents a concurrent first-time connection from resetting
+ * an existing identity's quota counters.
+ */
+export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map<string, IdentityUsage>> {
+  const normalisedKeys = [...new Set(emailKeys.map(normaliseEmail).filter(Boolean))];
+  const map = new Map<string, IdentityUsage>();
+  if (normalisedKeys.length === 0) return map;
+
+  const db = await admin();
+  const columns = "email_key, daily_limit, sent_count, sent_date, exhausted_until, window_started_at";
+  const { data: existing, error } = await db
+    .from("gmail_identity_usage")
+    .select(columns)
+    .in("email_key", normalisedKeys);
+  if (error) throw error;
+
+  for (const row of existing ?? []) map.set(row.email_key, row as IdentityUsage);
+
+  const missingKeys = normalisedKeys.filter((key) => !map.has(key));
+  if (missingKeys.length > 0) {
+    const now = new Date().toISOString();
+    const toInsert = missingKeys.map((email_key) => ({
+      email_key,
+      daily_limit: randomDailyLimit(),
+      sent_count: 0,
+      sent_date: today(),
+      exhausted_until: null,
+      window_started_at: now,
+    }));
+
+    const { error: insertError } = await db
       .from("gmail_identity_usage")
-      .select("email_key, daily_limit, sent_count, sent_date, exhausted_until")
-      .eq("email_key", emailKey)
-      .maybeSingle();
-    if (again) return again as IdentityUsage;
-    throw error;
+      .upsert(toInsert, { onConflict: "email_key", ignoreDuplicates: true });
+    if (insertError) throw insertError;
+
+    // Re-read only keys that were missing. This returns the winner's row if
+    // another request created the same identity concurrently.
+    const { data: insertedOrExisting, error: refreshError } = await db
+      .from("gmail_identity_usage")
+      .select(columns)
+      .in("email_key", missingKeys);
+    if (refreshError) throw refreshError;
+    for (const row of insertedOrExisting ?? []) map.set(row.email_key, row as IdentityUsage);
   }
-  return fresh;
+
+  if (map.size !== normalisedKeys.length) {
+    throw new Error("One or more Gmail identity usage rows could not be initialized.");
+  }
+  return map;
 }
 
 export function usageOf(row: IdentityUsage) {
@@ -119,10 +149,14 @@ export async function listProfileViews(
   connectorId: string,
 ): Promise<ProfileView[]> {
   const rows = await listProfileRows(userId, connectorId);
-  const out: ProfileView[] = [];
-  for (const row of rows) {
-    const usage = usageOf(await ensureIdentityUsage(row.email_key));
-    out.push({
+  if (rows.length === 0) return [];
+
+  const usageMap = await batchEnsureIdentityUsage(rows.map((row) => row.email_key));
+  return rows.map((row) => {
+    const record = usageMap.get(normaliseEmail(row.email_key));
+    if (!record) throw new Error("Gmail identity usage is missing for a connected profile.");
+    const usage = usageOf(record);
+    return {
       id: row.id,
       email: row.account_email,
       slot: row.slot,
@@ -130,9 +164,8 @@ export async function listProfileViews(
       limit: usage.limit,
       exhausted: usage.exhausted,
       exhaustedUntil: usage.exhaustedUntil,
-    });
-  }
-  return out;
+    };
+  });
 }
 
 export async function getProfileRow(
