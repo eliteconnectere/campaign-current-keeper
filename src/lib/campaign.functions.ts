@@ -179,58 +179,18 @@ export const approveRexCampaign = createServerFn({ method: "POST" })
       .in("status", ["pending_approval", "paused"]).select("id,status,scheduled_at").maybeSingle();
     if (error) throw error;
     if (!updated) throw new Error("This campaign is no longer awaiting approval. Refresh the campaign list.");
-    const isDueNow = new Date(data.scheduledAt).getTime() <= Date.now() + 30_000;
-    if (isDueNow) {
-      const secret = process.env["CAMPAIGN_WORKER_SECRET"] || process.env["CRON_SECRET"];
-      const host = process.env["VERCEL_URL"]
-        ? `https://${process.env["VERCEL_URL"]}`
-        : process.env["NEXT_PUBLIC_SITE_URL"] || "https://eliteconnectere.site";
-      if (!secret) {
-        await supabaseAdmin.from("campaigns").update({
-          status: "pending_approval", approved_at: null, scheduled_at: null,
-          next_run_at: new Date().toISOString(), last_error: "Approval was recorded but the worker secret is not configured; no email was sent.",
-          updated_at: new Date().toISOString(),
-        }).eq("id", data.campaignId).eq("status", "queued");
-        throw new Error("Rex could not start the campaign because CAMPAIGN_WORKER_SECRET (or CRON_SECRET) is not configured. No emails were sent; configure the worker secret and approve again.");
-      }
-      let workerResponse: Response;
-      try {
-        workerResponse = await fetch(`${host}/api/public/process-campaigns`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${secret}` },
-          body: JSON.stringify({ campaignId: data.campaignId }),
-          signal: AbortSignal.timeout(55_000),
-        });
-      } catch {
-        await supabaseAdmin.from("campaigns").update({
-          status: "pending_approval", approved_at: null, scheduled_at: null,
-          next_run_at: new Date().toISOString(), last_error: "Worker dispatch failed before execution could be confirmed.",
-          updated_at: new Date().toISOString(),
-        }).eq("id", data.campaignId).eq("status", "queued");
-        throw new Error("Rex could not reach the campaign worker. The campaign was returned to approval and no start was confirmed.");
-      }
-      if (!workerResponse.ok) {
-        const detail = (await workerResponse.text().catch(() => "")).slice(0, 240);
-        await supabaseAdmin.from("campaigns").update({
-          status: "pending_approval", approved_at: null, scheduled_at: null,
-          next_run_at: new Date().toISOString(), last_error: `Worker rejected dispatch (HTTP ${workerResponse.status}).`,
-          updated_at: new Date().toISOString(),
-        }).eq("id", data.campaignId).eq("status", "queued");
-        throw new Error(`Rex could not start the campaign worker (HTTP ${workerResponse.status}). No start was confirmed. ${detail}`);
-      }
-      const workerResult = await workerResponse.json().catch(() => null) as { ok?: boolean; processed?: number } | null;
-      if (!workerResult?.ok) {
-        throw new Error("The worker endpoint responded without confirming execution. Check campaign status before approving again.");
-      }
-      const { data: liveCampaign } = await supabaseAdmin.from("campaigns")
-        .select("id,status,started_at,sent_count,failed_count")
-        .eq("id", data.campaignId).eq("user_id", context.userId).maybeSingle();
-      if (!liveCampaign || !["running", "completed", "failed", "paused"].includes(liveCampaign.status)) {
-        throw new Error("Approval was accepted, but the worker has not confirmed that execution started. Check campaign status; do not approve again.");
-      }
-      return { ok: true as const, campaign: { ...updated, ...liveCampaign }, assessment, worker: workerResult, offerMonitor: !(data as any).enableMonitor };
-    }
-    return { ok: true as const, campaign: updated, assessment, worker: null, offerMonitor: !(data as any).enableMonitor };
+    // Approval only enqueues work. Do not fan out one HTTP worker request per
+    // user click: a simultaneous launch would create thousands of serverless
+    // invocations. The persistent Railway poller drains this shared queue with
+    // a database-enforced global concurrency cap.
+    return {
+      ok: true as const,
+      campaign: updated,
+      assessment,
+      worker: null,
+      queued: true as const,
+      offerMonitor: !(data as any).enableMonitor,
+    };
   });
 
 export const cancelRexScheduledCampaign = createServerFn({ method: "POST" })
