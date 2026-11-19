@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 const CONNECTOR_ID = "google_mail";
-// Each worker handles many campaigns in parallel; each campaign keeps sending
-// until the worker's time budget ends. Cron fans out enough workers for thousands
-// of simultaneous campaigns, and leases guarantee one worker per campaign.
+// Each HTTP worker handles a small batch. The database limits the total number
+// of concurrently leased campaigns across all dispatchers; the queue absorbs bursts.
 const CAMPAIGNS_PER_WORKER = 10;
 const MAX_PER_CAMPAIGN_RUN = 1000;
 // Keep each HTTP invocation bounded. Long-lived throughput comes from repeated
