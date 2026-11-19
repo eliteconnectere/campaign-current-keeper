@@ -274,13 +274,14 @@ export function EliteAssist({
         plan,
       } });
       approvalId = receipt.approval.id;
-      const authorized = await consumeRexOperationApproval({ data: { approvalId } }) as any;
-      const approvedStep = Array.isArray(authorized.plan) ? authorized.plan.find((step: any) =>
+      const authorized = (await consumeRexOperationApproval({ data: { approvalId } })) as Record<string, any>;
+      const planSteps: any[] = Array.isArray(authorized?.plan) ? authorized.plan : [];
+      const approvedStep = planSteps.find((step: any) =>
         step?.action === "send_private_chat" && step?.scope?.recipient === recipient && step?.scope?.body === body
-      ) : null;
-      if (!approvedStep || authorized.plan.length !== 1) throw new Error("The approved recipient or message did not match the preview. Nothing was sent.");
-      const result = await sendPrivateChatMessageForRex({ data: { approvalId, recipient, body } });
-      await finishRexOperationApproval({ data: { approvalId, ok: true, result: "Sent the exact approved Private Chat message to " + result.recipient + "." } });
+      );
+      if (!approvedStep || planSteps.length !== 1) throw new Error("The approved recipient or message did not match the preview. Nothing was sent.");
+      const result = (await sendPrivateChatMessageForRex({ data: { approvalId, recipient, body } })) as { recipient?: string };
+      await finishRexOperationApproval({ data: { approvalId, ok: true, result: "Sent the exact approved Private Chat message to " + (result?.recipient ?? recipient) + "." } });
       const tag = "[[REX_CHAT_APPROVAL:" + encodeURIComponent(JSON.stringify({ recipient, body })) + "]]";
       setMsgs(current => current.map(message => message.role === "assistant" && message.content.includes(tag)
         ? { ...message, content: message.content.replace(tag, "[[REX_CHAT_SENT]]") }
@@ -578,7 +579,7 @@ export function EliteAssist({
       const reply = result.ok
         ? (mode === "schedule"
           ? `Campaign approved and scheduled successfully.\n\n• Campaign: ${result.assessment.campaign.name}\n• Recipients: ${result.assessment.campaign.total.toLocaleString()}\n• Scheduled start: ${new Date(result.campaign.scheduled_at ?? scheduledAt).toLocaleString()}\n\nThe campaign worker will start it at that time.`
-          : `Campaign approved. The worker has confirmed execution started.\n\n• Campaign: ${result.assessment.campaign.name}\n• Recipients: ${result.assessment.campaign.total.toLocaleString()}\n• Worker processed in this run: ${Number(result.worker?.processed ?? 0).toLocaleString()}\n• Current status: ${result.campaign.status}\n\nDelivery progress will update as recipients are processed.`)
+          : `Campaign approved. The worker has confirmed execution started.\n\n• Campaign: ${result.assessment.campaign.name}\n• Recipients: ${result.assessment.campaign.total.toLocaleString()}\n• Worker processed in this run: ${Number((result as any).worker?.processed ?? 0).toLocaleString()}\n• Current status: ${result.campaign.status}\n\nDelivery progress will update as recipients are processed.`)
         : `I could not approve this campaign because a readiness check no longer passes. No campaign start was authorized.\n\n${result.assessment.checks.filter(check => !check.ok).map(check => `• ${check.label}: ${check.detail}`).join("\n")}`;
       if (result.ok) { try { window.localStorage.setItem("rex-approved-campaign:" + campaignId, mode); } catch {} setMsgs(current => current.map(message => message.role === "assistant" && message.content.includes("[[APPROVE_CAMPAIGN:" + campaignId + ":") ? { ...message, content: message.content.replace(/\[\[APPROVE_CAMPAIGN:[^\]]+\]\]/g, "[[CAMPAIGN_APPROVED:" + campaignId + ":" + mode + "]]") } : message)); }
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
@@ -2129,7 +2130,7 @@ function AssistantReply({
       const value = JSON.parse(decodeURIComponent(templateWriteApproval[1])) as { slot?: unknown; subject?: unknown; body?: unknown };
       if ((typeof value.subject === "string" || value.subject == null) && typeof value.body === "string") templateWritePayload = {
         slot: value.slot === "B" ? "B" : "A",
-        subject: value.subject,
+        subject: typeof value.subject === "string" ? value.subject : "",
         body: value.body,
       };
     }
