@@ -611,20 +611,6 @@ function Workspace() {
   engineRef.current = engine;
   const [autoResumePending, setAutoResumePending] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
-  useEffect(() => {
-    let active = true;
-    if (!signedIn) {
-      setRexSearchResources({ features: [], destinations: [] });
-      return () => { active = false; };
-    }
-    void listRexSearchDestinations()
-      .then(resources => { if (active) setRexSearchResources(resources); })
-      .catch(error => {
-        console.warn("[Rex search] Could not load personal destinations; registered app destinations remain searchable.", error);
-        if (active) setRexSearchResources({ features: [], destinations: [] });
-      });
-    return () => { active = false; };
-  }, [signedIn]);
 
   useEffect(() => {
     if (!signedIn) return;
@@ -755,6 +741,7 @@ function Workspace() {
   const [rexStudioReturnToSettings, setRexStudioReturnToSettings] = useState(false);
   const [rexPersonalDestinationId, setRexPersonalDestinationId] = useState<string | null>(null);
   const [rexSearchResources, setRexSearchResources] = useState<{ features: Array<{ id: string; name: string; slug: string; description: string }>; destinations: Array<{ id: string; name: string; description: string }> }>({ features: [], destinations: [] });
+  const rexSearchResourcesRequestedRef = useRef(false);
   const [rexResumeConversationId, setRexResumeConversationId] = useState<string | null>(null);
   const [rexReturnAvailable, setRexReturnAvailable] = useState(false);
   /** Every limit or locked feature opens an upgrade path — never a dead button. */
@@ -886,6 +873,28 @@ function Workspace() {
     | "subscription"
   >("root");
   const [settingsSearch, setSettingsSearch] = useState("");
+  useEffect(() => {
+    if (!signedIn) {
+      rexSearchResourcesRequestedRef.current = false;
+      setRexSearchResources({ features: [], destinations: [] });
+      return;
+    }
+    if (!settingsSearch.trim() || rexSearchResourcesRequestedRef.current) return;
+    const requestUid = uid;
+    rexSearchResourcesRequestedRef.current = true;
+    void listRexSearchDestinations()
+      .then(resources => {
+        if (requestUid && uidRef.current === requestUid) setRexSearchResources(resources);
+      })
+      .catch(error => {
+        console.warn("[Rex search] Could not load personal destinations; registered app destinations remain searchable.", error);
+        if (requestUid && uidRef.current === requestUid) {
+          rexSearchResourcesRequestedRef.current = false;
+          setRexSearchResources({ features: [], destinations: [] });
+        }
+      });
+  }, [signedIn, settingsSearch, uid]);
+
   const settingsSearchItems: Array<[string, string, typeof menuView, string]> = [
     ["Campaign protection", "Permanent duplicate protection and Gmail rotation", "campaignProtection", "duplicate duplicate protection permanent protection gmail rotation plan 3"],
     ["Sending sounds", "Tools & Visibility / Notification and Sound Management", "notifications", "sound sounds sending send air swish notification audio ringtone"],
