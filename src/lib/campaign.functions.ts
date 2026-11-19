@@ -145,7 +145,7 @@ export const assessRexCampaign = createServerFn({ method: "POST" })
     const risk = { blocked: baseRisk.blocked, reasons: baseRisk.reasons };
     const checks = [
       { key: "recipients", label: "Recipient list", ok: totalRecipients === Number(campaign.total_recipients) && pendingRecipients > 0, detail: `${pendingRecipients.toLocaleString()} pending of ${totalRecipients.toLocaleString()} total recipients` },
-      { key: "gmail", label: "Connected Gmail capacity", ok: readyProfiles.length > 0 && remainingCapacity > 0, detail: `${remainingCapacity.toLocaleString()} protected sends are available now across ${readyProfiles.length} account(s). The approved worker continues as rolling account allowances renew; ${pending.length.toLocaleString()} recipient(s) are queued.` },
+      { key: "gmail", label: "Connected Gmail capacity", ok: readyProfiles.length > 0 && remainingCapacity > 0, detail: `${remainingCapacity.toLocaleString()} protected sends are available now across ${readyProfiles.length} account(s). The approved worker continues as rolling account allowances renew; ${pendingRecipients.toLocaleString()} recipient(s) are queued.` },
       { key: "content", label: "Campaign content safety", ok: !risk.blocked, detail: risk.blocked ? risk.reasons.join("; ") : "No high-confidence content risk detected" },
       { key: "state", label: "Campaign state", ok: campaign.status === "pending_approval" || campaign.status === "paused", detail: campaign.status === "pending_approval" || campaign.status === "paused" ? "Awaiting owner approval" : `Current state: ${campaign.status}` },
     ];
