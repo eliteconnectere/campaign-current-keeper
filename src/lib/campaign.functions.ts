@@ -315,7 +315,9 @@ export const getRexCampaignWorkspaceData = createServerFn({ method: "GET" })
         .select("campaign_id,email,recipient_name,status,message_subject,message_body,sent_at,last_error,attempts,created_at")
         .in("campaign_id", ids)
         .order("created_at", { ascending: false })
-        .limit(500);
+        // The workspace exposes at most 100 recent recipient records. Fetch
+        // only that same bounded window instead of reading 5x more rows.
+        .limit(100);
       if (error) throw new Error("Could not read campaign recipient records: " + error.message);
       recipients = data ?? [];
     }
