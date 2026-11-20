@@ -77,13 +77,12 @@ export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map
   const columns = "email_key, daily_limit, sent_count, sent_date, exhausted_until, window_started_at";
   const { data: existing, error } = await db
     .from("gmail_identity_usage")
-    .select(columns)
+    .select("email_key")
     .in("email_key", normalisedKeys);
   if (error) throw error;
 
-  for (const row of existing ?? []) map.set(row.email_key, row as IdentityUsage);
-
-  const missingKeys = normalisedKeys.filter((key) => !map.has(key));
+  const presentKeys = new Set((existing ?? []).map((row: { email_key: string }) => row.email_key));
+  const missingKeys = normalisedKeys.filter((key) => !presentKeys.has(key));
   if (missingKeys.length > 0) {
     const now = new Date().toISOString();
     const toInsert = missingKeys.map((email_key) => ({
@@ -110,6 +109,11 @@ export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map
     for (const row of insertedOrExisting ?? []) map.set(row.email_key, row as IdentityUsage);
   }
 
+  const { data: rollingRows, error: rollingError } = await db.rpc("get_gmail_identity_usage", {
+    p_email_keys: normalisedKeys,
+  });
+  if (rollingError) throw rollingError;
+  for (const row of (rollingRows ?? []) as IdentityUsage[]) map.set(row.email_key, row);
   if (map.size !== normalisedKeys.length) {
     throw new Error("One or more Gmail identity usage rows could not be initialized.");
   }
@@ -119,10 +123,8 @@ export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map
 export function usageOf(row: IdentityUsage) {
   const now = Date.now();
   const cooling = Boolean(row.exhausted_until && new Date(row.exhausted_until).getTime() > now);
-  const windowStartedAt = new Date(row.window_started_at).getTime();
-  const windowExpired = !Number.isFinite(windowStartedAt) || now - windowStartedAt >= 86_400_000;
-  // Never reset a displayed counter while its post-limit cooldown is active.
-  const used = windowExpired && !cooling ? 0 : row.sent_count;
+  // sent_count is supplied by the database as the number of successful sends in the last rolling 24 hours.
+  const used = Math.max(0, Number(row.sent_count) || 0);
   return {
     used,
     limit: row.daily_limit,
