@@ -261,7 +261,7 @@ async function processCampaigns(onlyCampaignId?: string) {
       await releaseCampaignLease(supabaseAdmin, campaign);
       return;
     }
-    const [{ listProfileRows, listProfileViews, decryptKey, recordSend }, google, safety] = await Promise.all([
+    const [{ listProfileRows, listProfileViews, decryptKey, recordSend, markIdentityCooling }, google, safety] = await Promise.all([
       import("@/server/gmailProfiles.server"),
       import("@/server/google.server"),
       import("@/lib/contentSafety"),
@@ -429,9 +429,21 @@ async function processCampaigns(onlyCampaignId?: string) {
               sent = true;
               break;
             }
-            lastError = new Error(`Gmail rejected the message (${response.status}).`);
+            const rejectionBody = await response.text();
+            const googleQuotaBlocked = /quotaExceeded|dailyLimitExceeded|userRateLimitExceeded|daily.{0,20}limit|sending limit/i.test(rejectionBody);
+            if (googleQuotaBlocked) {
+              try {
+                await markIdentityCooling(candidate.row.email_key);
+                if (candidate.usage) candidate.usage.exhausted = true;
+              } catch (cooldownError) {
+                console.error("[campaign-worker] could not persist Google's quota cooldown", cooldownError);
+              }
+            }
+            lastError = new Error(googleQuotaBlocked
+              ? "Google has blocked sending from this Gmail profile. It is cooling down for up to 24 hours."
+              : `Gmail rejected the message (${response.status}).`);
             if (response.status === 401) google.forgetAccessToken(decryptKey(candidate.row));
-            if (response.status === 401 || response.status === 403) continue;
+            if (response.status === 401 || response.status === 403 || response.status === 429) continue;
           } catch (error) {
             lastError = error instanceof Error ? error : new Error("Gmail send failed.");
           }
