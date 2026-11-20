@@ -74,7 +74,6 @@ export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map
   if (normalisedKeys.length === 0) return map;
 
   const db = await admin();
-  const columns = "email_key, daily_limit, sent_count, sent_date, exhausted_until, window_started_at";
   const { data: existing, error } = await db
     .from("gmail_identity_usage")
     .select("email_key")
