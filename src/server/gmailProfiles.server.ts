@@ -297,3 +297,14 @@ export async function recordSend(emailKey: string) {
     exhausted: Boolean(result.exhausted),
   };
 }
+
+/** Persist Google's own quota suspension so the engine will not retry this identity early. */
+export async function markIdentityCooling(emailKey: string) {
+  const db = await admin() as any;
+  const { data, error } = await db.rpc("mark_gmail_identity_exhausted", {
+    p_email_key: normaliseEmail(emailKey),
+    p_cooldown_seconds: 86_400,
+  });
+  if (error) throw error;
+  return data as string;
+}
