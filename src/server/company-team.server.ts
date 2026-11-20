@@ -55,7 +55,7 @@ export async function listCompanySeats(ownerUserId: string, email?: string | nul
   if (!(await isCompanyOwner(email))) throw new Error("Only the Company owner can manage Team Seats.");
   const client = await db();
   const { data, error } = await client.from("company_team_seats").select("id,member_email,member_user_id,status,created_at,accepted_at,revoked_at")
-    .eq("owner_user_id", ownerUserId).order("created_at", { ascending: true });
+    .eq("owner_user_id", ownerUserId).in("status", ["pending", "active"]).order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as CompanySeat[];
 }
