@@ -349,7 +349,7 @@ async function processCampaigns(onlyCampaignId?: string) {
         campaignControlRequested = true;
         break;
       }
-      let selected = profiles.find((item) => item.usage && item.usage.used < item.usage.limit);
+      let selected = profiles.find((item) => item.usage && !item.usage.exhausted && item.usage.used < item.usage.limit);
       if (!selected) break;
       const { data: claimedRecipients, error: claimError } = await (supabaseAdmin as any)
         .rpc("claim_campaign_recipients", {
