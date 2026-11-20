@@ -322,6 +322,7 @@ export const sendGmailMessage = createServerFn({ method: "POST" })
       usageOf,
       decryptKey,
       recordSend,
+      markIdentityCooling,
     } = await import("@/server/gmailProfiles.server");
 
     const releaseClaim = async () => {
@@ -388,7 +389,14 @@ export const sendGmailMessage = createServerFn({ method: "POST" })
       await releaseClaim();
       const bodyText = await res.text();
       console.error(`Gmail send refused [${res.status}]: ${bodyText}`);
-      const isQuota = /quota|rateLimitExceeded|userRateLimit/i.test(bodyText);
+      const isQuota = /quotaExceeded|dailyLimitExceeded|userRateLimitExceeded|daily.{0,20}limit|sending limit/i.test(bodyText);
+      if (isQuota) {
+        try {
+          await markIdentityCooling(preferred.email_key);
+        } catch (cooldownError) {
+          console.error("Could not persist Google's Gmail quota cooldown", cooldownError);
+        }
+      }
       if (!isQuota) {
         try {
           const { flagAccount } = await import("@/server/gmailPenalties.server");
