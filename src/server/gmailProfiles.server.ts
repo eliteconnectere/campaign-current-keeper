@@ -110,7 +110,7 @@ export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map
     for (const row of insertedOrExisting ?? []) map.set(row.email_key, row as IdentityUsage);
   }
 
-  const { data: rollingRows, error: rollingError } = await db.rpc("get_gmail_identity_usage", {
+  const { data: rollingRows, error: rollingError } = await (db as any).rpc("get_gmail_identity_usage", {
     p_email_keys: normalisedKeys,
   });
   if (rollingError) throw rollingError;
