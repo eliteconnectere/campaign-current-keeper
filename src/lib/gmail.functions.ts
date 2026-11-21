@@ -104,6 +104,22 @@ export const prepareGmailConnect = createServerFn({ method: "POST" })
     };
   });
 
+type GmailConnectAttemptStatus =
+  | "pending"
+  | "connected"
+  | "no_send_scope"
+  | "no_identity"
+  | "limit_reached"
+  | "suspended"
+  | "banned"
+  | "declined"
+  | "no_offline"
+  | "error"
+  | "expired"
+  | "cancelled"
+  | "missing"
+  | (string & {});
+
 export const getGmailConnectAttempt = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { attempt: string }) => ({ attempt: String(input?.attempt ?? "") }))
@@ -117,7 +133,7 @@ export const getGmailConnectAttempt = createServerFn({ method: "POST" })
       .eq("user_id", context.userId)
       .maybeSingle();
     const r = row as
-      | { status: string; email: string | null; message: string | null; created_at: string }
+      | { status: GmailConnectAttemptStatus; email: string | null; message: string | null; created_at: string }
       | null;
     if (!r) return { status: "missing", email: null, message: null };
     if (r.status === "pending" && Date.now() - new Date(r.created_at).getTime() > ATTEMPT_TTL_MS) {
@@ -128,6 +144,7 @@ export const getGmailConnectAttempt = createServerFn({ method: "POST" })
         .eq("status", "pending");
       return { status: "expired", email: null, message: null };
     }
+    // Preserve the server's exact penalty/suspension message for the client UI.
     return { status: r.status, email: r.email, message: r.message };
   });
 
