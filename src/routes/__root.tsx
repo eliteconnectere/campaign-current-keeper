@@ -40,7 +40,7 @@ function describeRouteError(error: unknown): { title: string; diagnostic: string
   if (error instanceof Response) {
     return {
       title: `Request failed (HTTP ${error.status})`,
-      diagnostic: [`HTTP ${error.status} ${error.statusText}`, error.url ? `URL: ${error.url}` : ""].filter(Boolean).join("\\n"),
+      diagnostic: [`HTTP ${error.status} ${error.statusText}`, error.url ? `URL: ${error.url}` : ""].filter(Boolean).join("\n"),
       likelyCause: error.status === 401 || error.status === 403
         ? "The request may require a valid sign-in or permission."
         : error.status >= 500
@@ -63,7 +63,7 @@ function describeRouteError(error: unknown): { title: string; diagnostic: string
         : "The technical message and stack below identify the failure; the exact cause may need code-level inspection.";
   return {
     title: `${name}: ${message}`.slice(0, 500),
-    diagnostic: [`${name}: ${message}`, cause ? `Cause: ${cause}` : "", stack].filter(Boolean).join("\\n").slice(0, 12000),
+    diagnostic: [`${name}: ${message}`, cause ? `Cause: ${cause}` : "", stack].filter(Boolean).join("\n").slice(0, 12000),
     likelyCause,
   };
 }
@@ -81,7 +81,7 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
     `Summary: ${details.title}`,
     `Likely cause: ${details.likelyCause}`,
     details.diagnostic,
-  ].filter(Boolean).join("\\n");
+  ].filter(Boolean).join("\n");
 
   useEffect(() => {
     reportLovableError(error, { boundary: "tanstack_root_error_component", route: typeof window !== "undefined" ? window.location.pathname : "server" });
@@ -183,7 +183,7 @@ function GlobalRuntimeErrorMonitor() {
   useEffect(() => {
     const capture = (error: unknown, source: string) => {
       const detail = error instanceof Error
-        ? `${error.name}: ${error.message}\\n${error.stack ?? ""}`
+        ? `${error.name}: ${error.message}\n${error.stack ?? ""}`
         : typeof error === "string" ? error : (() => { try { return JSON.stringify(error, null, 2); } catch { return String(error); } })();
       const location = window.location.href;
       setFailure({ title: source, detail: detail.slice(0, 12000), location });
@@ -199,7 +199,7 @@ function GlobalRuntimeErrorMonitor() {
     };
   }, []);
   if (!failure) return null;
-  const report = ["Elite Connectere runtime error", `Type: ${failure.title}`, `Page: ${failure.location}`, failure.detail].join("\\n");
+  const report = ["Elite Connectere runtime error", `Type: ${failure.title}`, `Page: ${failure.location}`, failure.detail].join("\n");
   return (
     <div role="alert" className="fixed bottom-4 left-1/2 z-[999] w-[min(560px,calc(100vw-24px))] -translate-x-1/2 rounded-2xl border border-destructive/40 bg-card p-4 shadow-2xl">
       <div className="flex items-start justify-between gap-3">
