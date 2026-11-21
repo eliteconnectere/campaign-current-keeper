@@ -491,6 +491,9 @@ export function EliteAssist({
 
   async function runRexCampaignCommand(question: string): Promise<string | null> {
     const latestAssistant = [...msgs].reverse().find(message => message.role === "assistant");
+    const hasActiveChatOrHotspotApproval = Boolean(latestAssistant &&
+      /\[\[REX_CHAT_APPROVAL:[^\]]+\]\]|\[\[REX_HOTSPOT_INVITE_APPROVAL:[^\]]+\]\]/.test(latestAssistant.content));
+    if (hasActiveChatOrHotspotApproval) return null;
     const existingApproval = latestAssistant && messageIsUnapprovedCampaignApproval(latestAssistant.content)
       ? latestAssistant
       : undefined;
@@ -1724,7 +1727,7 @@ export function EliteAssist({
       if (smartFill) { await approveSmartFillAction(smartFill, true); return; }
       if (memoryDelete) { await approveMemoryDelete(memoryDelete.memoryId, true); return; }
       if (memorySave) { await approveMemorySave(memorySave, true); return; }
-      if (hotspotInvite) { await approveHotspotInvite(hotspotInvite, true); return; }
+      // The hotspot approval marker is rendered as a button; never auto-execute it.
       if (reply.includes("[[REX_VALIDATE_APPROVAL]]")) { await approveRecipientValidation(true); return; }
       if (reply.includes("[[REX_IMPORT_APPROVAL]]")) { await approveRecipientImport(true); return; }
       if (reply.includes("[[REX_LOGOUT_APPROVAL]]")) { await confirmLogoutFromCard(); return; }
