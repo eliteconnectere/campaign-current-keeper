@@ -40,8 +40,8 @@ import { RexChatFab } from "@/features/assist/RexChatFab";
 const db = typedClient as unknown as SupabaseClient;
 // Always upload to the same Supabase project used by the authenticated client.
 // This avoids stale project URLs/keys when the backend project is replaced.
-const SUPABASE_URL = typedClient.supabaseUrl;
-const ANON = typedClient.supabaseKey;
+const SUPABASE_URL = typedClient.storage.url.replace(/\\/storage\\/v1\\/?$/, "");
+const ANON = typedClient.rest.headers["apikey"];
 
 type Profile = { user_id: string; display_name: string; username: string };
 type Request = { id: string; sender_id: string; receiver_id: string; status: string; created_at: string };
