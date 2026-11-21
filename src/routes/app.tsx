@@ -227,6 +227,7 @@ function MenuRow({
   danger,
   onClick,
   dataAttr,
+  dataAttrValue,
 }: {
   icon: typeof Settings;
   label: string;
@@ -234,11 +235,12 @@ function MenuRow({
   danger?: boolean;
   onClick?: () => void;
   dataAttr?: string;
+  dataAttrValue?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      {...(dataAttr ? { [dataAttr]: "" } : {})}
+      {...(dataAttr ? { [dataAttr]: dataAttrValue ?? "" } : {})}
       className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors active:bg-soft"
     >
       <Icon className="size-4 shrink-0 text-brand" />
@@ -967,6 +969,15 @@ function Workspace() {
   const [eraseNow, setEraseNow] = useState(Date.now());
   const [eraseBusy, setEraseBusy] = useState(false);
   const [eraseWarningOpen, setEraseWarningOpen] = useState(false);
+  useEffect(() => {
+    const openEraseData = () => {
+      setMenuView("settings");
+      setPanel("menu");
+      setEraseWarningOpen(true);
+    };
+    window.addEventListener("ec-open-erase-data", openEraseData);
+    return () => window.removeEventListener("ec-open-erase-data", openEraseData);
+  }, []);
   const [eraseImpactExpanded, setEraseImpactExpanded] = useState(false);
   const [guide, setGuide] = useState<{ msg: string; target: "recipients" | "profiles" } | null>(
     null,
@@ -2997,7 +3008,7 @@ function removeCategory(kind: "duplicate" | "risky") {
                       <MenuRow
                         icon={Settings}
                         label="Settings"
-                        dataAttr="data-tour-settings-entry"
+                        dataAttr="data-tour" dataAttrValue="settings-entry"
                         sub="Customization, sounds, protection, hotspot & account"
                         onClick={() => setMenuView("settings")}
                       />
@@ -5441,10 +5452,10 @@ Please explain this feature and help me with it. Keep this as a discussion first
                 canSendElite,
                 profiles: profiles.slice(0, 10).map((profile: any, index: number) => ({
                   label: "Gmail profile " + (index + 1),
-                  status: profile?.status ?? "unknown",
-                  used: Number(profile?.used ?? profile?.sent ?? profile?.sentToday ?? 0),
+                  status: statusOf(profile),
+                  used: Number(profile?.used ?? 0),
                   limit: Number(profile?.limit ?? profile?.dailyLimit ?? 0),
-                  remaining: Math.max(0, Number(profile?.limit ?? profile?.dailyLimit ?? 0) - Number(profile?.used ?? profile?.sent ?? profile?.sentToday ?? 0)),
+                  remaining: Math.max(0, Number(profile?.limit ?? 0) - Number(profile?.used ?? 0)),
                   exhausted: Boolean(profile?.exhausted),
                 })),
               };
@@ -5518,8 +5529,16 @@ Please explain this feature and help me with it. Keep this as a discussion first
           }}
           onLoadVaultToStandard={() => {
             if (quarantineVault.length === 0) return;
+            switchMode("standard");
             setRecipients(quarantineVault);
-            setMode("standard");
+            const nextGen = buildGenerated(quarantineVault);
+            setGenerated(nextGen);
+            generatedRef.current = nextGen;
+            setValidated(true);
+            setFrom(1);
+            setTo(quarantineVault.length);
+            setTab("risky");
+            setCleanupHandled(true);
             toast.success(`Loaded ${quarantineVault.length} leads into Standard Mode`);
           }}
           onApplyTemplate={(tpl) => {
