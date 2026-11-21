@@ -371,18 +371,38 @@ export const readRexWorkspaceData = createServerFn({ method: "POST" })
       let query = db.from("campaign_recipients").select("id,campaign_id,email,status,created_at").in("campaign_id", campaignIds).order("created_at", { ascending: false }).limit(data.limit);
       if (data.recordId) query = query.eq("id", data.recordId);
       const result = await query; rows = result.data ?? []; error = result.error;
-    } else if (data.domain === "delivery_history" || data.domain === "send_events") {
-      let query = db.from("send_events").select("id,campaign_id,recipient_email,status,error,created_at").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(data.limit);
+    } else if (data.domain === "delivery_history") {
+      let query = db.from("campaign_delivery_history")
+        .select("id,campaign_id,recipient_email,subject,gmail_profile_email,sent_at")
+        .eq("user_id", context.userId).order("sent_at", { ascending: false }).limit(data.limit);
+      if (data.recordId) query = query.eq("id", data.recordId);
+      const result = await query; rows = result.data ?? []; error = result.error;
+    } else if (data.domain === "send_events") {
+      let query = db.from("send_events").select("id,mode,sent_at")
+        .eq("user_id", context.userId).order("sent_at", { ascending: false }).limit(data.limit);
       if (data.recordId) query = query.eq("id", data.recordId);
       const result = await query; rows = result.data ?? []; error = result.error;
     } else if (data.domain === "gmail_profiles") {
-      let query = db.from("gmail_profiles").select("id,email,display_name,status,daily_limit,sent_today,created_at").eq("user_id", context.userId).order("created_at", { ascending: false }).limit(data.limit);
+      let query = db.from("gmail_profiles")
+        .select("id,account_email,email_key,slot,position,created_at")
+        .eq("user_id", context.userId).order("created_at", { ascending: false }).limit(data.limit);
       if (data.recordId) query = query.eq("id", data.recordId);
       const result = await query; rows = result.data ?? []; error = result.error;
     } else if (data.domain === "gmail_usage") {
-      let query = db.from("gmail_usage").select("id,profile_id,date,sent_count,created_at").eq("user_id", context.userId).order("date", { ascending: false }).limit(data.limit);
-      if (data.recordId) query = query.eq("id", data.recordId);
-      const result = await query; rows = result.data ?? []; error = result.error;
+      const { data: profileRows, error: profileError } = await db.from("gmail_profiles")
+        .select("email_key").eq("user_id", context.userId);
+      if (profileError) {
+        error = profileError;
+      } else {
+        const emailKeys = [...new Set((profileRows ?? []).map((profile: any) => String(profile.email_key ?? "").trim().toLowerCase()).filter(Boolean))];
+        if (emailKeys.length) {
+          let query = db.from("gmail_identity_usage")
+            .select("email_key,daily_limit,sent_count,sent_date,exhausted_until,window_started_at")
+            .in("email_key", emailKeys).limit(data.limit);
+          if (data.recordId) query = query.eq("email_key", data.recordId);
+          const result = await query; rows = result.data ?? []; error = result.error;
+        }
+      }
     } else if (data.domain === "rex_events") {
       let query = db.from("rex_events").select("id,kind,severity,title,detail,event_key,source,occurred_at,created_at").eq("user_id", context.userId).order("occurred_at", { ascending: false }).limit(data.limit);
       if (data.recordId) query = query.eq("id", data.recordId);
