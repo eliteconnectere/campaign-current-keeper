@@ -1026,6 +1026,11 @@ export function EliteAssist({
         }
       }
 
+      const latestAssistantBeforeCommand = [...msgs].reverse().find(message => message.role === "assistant");
+      const hasActiveChatOrHotspotApproval = Boolean(latestAssistantBeforeCommand &&
+        /\[\[REX_CHAT_APPROVAL:[^\]]+\]\]|\[\[REX_HOTSPOT_INVITE_APPROVAL:[^\]]+\]\]/.test(latestAssistantBeforeCommand.content));
+      const isClearSend = !hasActiveChatOrHotspotApproval && isClearSendCommand(content);
+
       if (isRecipientPaste) {
         // User turn was saved above in redacted form.
         await stageRecipientImport(content, "Pasted into Rex chat", false, true);
@@ -1037,10 +1042,6 @@ export function EliteAssist({
           .replace(/[^a-z0-9]/gi, "");
         if (!remainingInstruction && !isClearSend) return;
       }
-      const latestAssistantBeforeCommand = [...msgs].reverse().find(message => message.role === "assistant");
-      const hasActiveChatOrHotspotApproval = Boolean(latestAssistantBeforeCommand &&
-        /\[\[REX_CHAT_APPROVAL:[^\]]+\]\]|\[\[REX_HOTSPOT_INVITE_APPROVAL:[^\]]+\]\]/.test(latestAssistantBeforeCommand.content));
-      const isClearSend = !hasActiveChatOrHotspotApproval && isClearSendCommand(content);
 
       // SEND COMMAND: import staged list, prepare workspace campaign, show Approve. No Gemini rewrite. No validate gate.
       if (isClearSend) {
