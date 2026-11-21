@@ -277,12 +277,60 @@ async function verifyRexPrivateChatSendApproval(
 }
 
 /** Sends a Private Chat message from Rex only after the user approves the exact recipient and text. */
-/** Private Chat is disconnected until a replacement messaging provider is configured. */
 export const sendPrivateChatMessageForRex = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((_input: { approvalId: string; recipient: string; body: string }) => ({}))
-  .handler(async () => {
-    throw new Error("Private Chat is temporarily offline. No message was sent.");
+  .inputValidator((input: { approvalId: string; recipient: string; body: string }) => {
+    const approvalId = String(input?.approvalId ?? "").trim();
+    const recipient = String(input?.recipient ?? "").trim().replace(/^@/, "").slice(0, 80);
+    const body = String(input?.body ?? "").trim().slice(0, 4000);
+    if (!/^[0-9a-f-]{36}$/i.test(approvalId)) throw new Error("A valid Rex approval is required.");
+    if (!recipient || !body) throw new Error("The approved contact and message are required.");
+    return { approvalId, recipient, body };
+  })
+  .handler(async ({ data, context }) => {
+    const email = (context.claims as { email?: string } | undefined)?.email;
+    if (!(await eligibility(context.userId, email))) throw new Error("Private Chat is a Plan 3 feature.");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin as any;
+
+    await verifyRexPrivateChatSendApproval(db, context.userId, data.approvalId, data.recipient, data.body);
+
+    const { data: connections, error: connectionError } = await db.from("connections")
+      .select("id,user_a,user_b").or("user_a.eq." + context.userId + ",user_b.eq." + context.userId);
+    if (connectionError) throw new Error("Your connected Private Chat contacts could not be loaded.");
+    const connected = (connections ?? []) as { id: string; user_a: string; user_b: string }[];
+    if (!connected.length) throw new Error("You have no connected Private Chat contacts. No message was sent.");
+    const partnerIds = connected.map(row => row.user_a === context.userId ? row.user_b : row.user_a);
+    const { data: profiles, error: profileError } = await db.from("chat_profiles")
+      .select("user_id,display_name,username").in("user_id", partnerIds);
+    if (profileError) throw new Error("Your connected contacts could not be resolved.");
+    const contacts = (profiles ?? []) as { user_id: string; display_name: string; username: string }[];
+    const term = data.recipient.toLowerCase();
+    const matches = contacts.filter(person =>
+      person.display_name.trim().toLowerCase() === term || person.username.trim().replace(/^@/, "").toLowerCase() === term
+    );
+    if (matches.length !== 1) {
+      throw new Error(matches.length ? "More than one connected contact matches. Use the exact unique @username." : "That exact name or username is not a connected Private Chat contact.");
+    }
+    const partnerId = matches[0]!.user_id;
+    const connection = connected.find(row => row.user_a === partnerId || row.user_b === partnerId);
+    if (!connection) throw new Error("The selected contact is no longer connected. No message was sent.");
+
+    const { inspectOutgoingMessage, clearExpiredRestriction } = await import("@/server/guardian.server");
+    await clearExpiredRestriction(context.userId);
+    const safety = await inspectOutgoingMessage({
+      userId: context.userId,
+      ...(email ? { email } : {}),
+      connectionId: connection.id,
+      body: data.body,
+    });
+    if (!safety.allowed) throw new Error(safety.message || "The message was blocked by the account safety review. Nothing was sent.");
+
+    const { data: inserted, error: insertError } = await db.from("chat_messages")
+      .insert({ connection_id: connection.id, sender_id: context.userId, kind: "text", body: data.body })
+      .select("id").single();
+    if (insertError || !inserted) throw new Error("Private Chat could not confirm the message was saved.");
+    return { ok: true as const, recipient: matches[0]!.display_name, messageId: inserted.id };
   });
 
 
