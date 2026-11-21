@@ -93,11 +93,13 @@ export const Route = createFileRoute("/api/public/gmail/callback")({
             );
           }
           const detail =
-            out.reason === "no_send_scope"
-              ? "Sending permission wasn't ticked. Return to the app and connect again, allowing “Send email on your behalf”."
-              : out.reason === "limit_reached"
-                ? "Your plan's Gmail profile limit is reached. Return to the app to upgrade."
-                : "Google did not confirm the address. Return to the app and try again.";
+            out.reason === "banned" || out.reason === "suspended"
+              ? out.message ?? "This Gmail is currently restricted from Elite Engine."
+              : out.reason === "no_send_scope"
+                ? "Sending permission wasn't ticked. Return to the app and connect again, allowing “Send email on your behalf”."
+                : out.reason === "limit_reached"
+                  ? "Your plan's Gmail profile limit is reached. Return to the app to upgrade."
+                  : "Google did not confirm the address. Return to the app and try again.";
           return page("Gmail not connected", detail, false);
         } catch (e) {
           const message = e instanceof Error ? e.message : "Connection failed";
