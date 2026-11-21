@@ -5270,7 +5270,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
       {rexStudioOpen && (
         <RexStudio
           uid={uidRef.current ?? "session"}
-          initialSection={rexStudioInitialSection}
+          {...(rexStudioInitialSection ? { initialSection: rexStudioInitialSection } : {})}
           onBack={() => { setRexStudioOpen(false); setRexStudioInitialSection(undefined); const back = rexStudioReturnToSettings; setRexStudioReturnToSettings(false); if (back) { setPanel("menu"); setMenuView("settings"); } }}
           onOpenChat={(conversationId) => { setRexResumeConversationId(conversationId ?? null); setRexStudioOpen(false); setAssistOpen(true); }}
           onOpenTracker={() => { setRexStudioOpen(false); setFeatureStudioFilter({}); setFeatureStudio("tracker"); }}
