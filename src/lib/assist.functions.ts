@@ -1054,16 +1054,16 @@ do not invent it.
       const listDynamicFeaturesCall = parts.find(part => part.functionCall?.name === "list_dynamic_features")?.functionCall;
       if (listDynamicFeaturesCall) {
         const list = rexWorkspace.dynamicFeatures;
-        if (!list.length) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "You don't have any published dynamic Rex features yet. When you ask me to build one, I'll create a working private page for it.";
-        return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "Your published dynamic Rex features:\\n" + list.map(item => "• **" + item.name + "** — " + item.description + " [[DESTINATION_LABEL:" + encodeURIComponent(item.name) + "]] [[GO:rex-feature-" + item.id + "]]").join("\\n");
+        if (!list.length) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "You don't have any published dynamic Rex features yet. When you ask me to build one, I'll create a working private page for it.";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "Your published dynamic Rex features:\n" + list.map(item => "• **" + item.name + "** — " + item.description + " [[DESTINATION_LABEL:" + encodeURIComponent(item.name) + "]] [[GO:rex-feature-" + item.id + "]]").join("\n");
       }
       const createDynamicFeatureCall = parts.find(part => part.functionCall?.name === "create_dynamic_feature")?.functionCall;
       const openDynamicFeatureCall = parts.find(part => part.functionCall?.name === "open_dynamic_feature")?.functionCall;
       if (createDynamicFeatureCall) {
         const latest = [...messages].reverse().find(message => message.role === "user")?.content ?? "";
-        const explicit = /\\b(create|build|make|generate|implement|develop|set up)\\b/i.test(latest) &&
-          /\\b(feature|dashboard|tool|workflow|page|app|module|system|route|destination|workspace|calculator|crm|booking|inventory|planner|tracker|portal|form|database|website|calendar|catalog|manager|generator|editor|store|marketplace|scheduler|invoice|report|budget|quiz|survey|directory|helpdesk|kanban|pipeline)\\b/i.test(latest);
-        if (!explicit) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I can explain the feature builder, but I only create a feature when you explicitly ask me to build one.";
+        const explicit = /\b(create|build|make|generate|implement|develop|set up)\b/i.test(latest) &&
+          /\b(feature|dashboard|tool|workflow|page|app|module|system|route|destination|workspace|calculator|crm|booking|inventory|planner|tracker|portal|form|database|website|calendar|catalog|manager|generator|editor|store|marketplace|scheduler|invoice|report|budget|quiz|survey|directory|helpdesk|kanban|pipeline)\b/i.test(latest);
+        if (!explicit) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can explain the feature builder, but I only create a feature when you explicitly ask me to build one.";
         const args = createDynamicFeatureCall.args ?? {};
         const name = String(args.name ?? "").trim().replace(/[<>]/g, "").slice(0, 80);
         const description = String(args.description ?? "").trim().slice(0, 500);
@@ -1083,7 +1083,7 @@ do not invent it.
           });
           return [component];
         });
-        if (!name || !description || !components.length) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I couldn't build that yet because the feature needs a name, purpose, and at least one supported screen component.";
+        if (!name || !description || !components.length) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I couldn't build that yet because the feature needs a name, purpose, and at least one supported screen component.";
         const slugBase = name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "rex-feature";
         const db = (await import("@/integrations/supabase/client.server")).supabaseAdmin as any;
         let slug = slugBase;
@@ -1092,27 +1092,27 @@ do not invent it.
           const { data: exists } = await db.from("rex_dynamic_features").select("id").eq("user_id", rexWorkspace.userId).eq("slug", slug).maybeSingle();
           if (!exists) break;
           slug = (slugBase.slice(0, 42) + "-" + suffix++).slice(0, 55);
-          if (suffix > 50) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I couldn't find an available route name for this feature.";
+          if (suffix > 50) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I couldn't find an available route name for this feature.";
         }
         const blueprint = { version: 1, components };
         const { data: created, error } = await db.from("rex_dynamic_features").insert({
           user_id: rexWorkspace.userId, slug, name, description, blueprint, status: "published", version: 1, published_at: new Date().toISOString()
         }).select("id,name,slug").single();
-        if (error || !created) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "The feature was not published because its secure save failed. Please try again.";
-        return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I built and published **" + created.name + "** as a working, private Rex feature page. Its screen is rendered from approved components and its data is isolated to your account. Open it here:\\n\\n[[DESTINATION_LABEL:" + encodeURIComponent(created.name) + "]]\\n[[GO:rex-feature-" + created.id + "]]";
+        if (error || !created) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "The feature was not published because its secure save failed. Please try again.";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I built and published **" + created.name + "** as a working, private Rex feature page. Its screen is rendered from approved components and its data is isolated to your account. Open it here:\n\n[[DESTINATION_LABEL:" + encodeURIComponent(created.name) + "]]\n[[GO:rex-feature-" + created.id + "]]";
       }
       if (openDynamicFeatureCall) {
         const featureId = String(openDynamicFeatureCall.args?.feature_id ?? "");
         const db = (await import("@/integrations/supabase/client.server")).supabaseAdmin as any;
         const { data: feature } = await db.from("rex_dynamic_features").select("id,name").eq("id", featureId).eq("user_id", rexWorkspace.userId).eq("status", "published").maybeSingle();
-        if (!feature) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I couldn't find that published feature in your own workspace.";
-        return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "Your feature is ready to open:\\n\\n[[DESTINATION_LABEL:" + encodeURIComponent(feature.name) + "]]\\n[[GO:rex-feature-" + feature.id + "]]";
+        if (!feature) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I couldn't find that published feature in your own workspace.";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "Your feature is ready to open:\n\n[[DESTINATION_LABEL:" + encodeURIComponent(feature.name) + "]]\n[[GO:rex-feature-" + feature.id + "]]";
       }
       const createPersonalDestinationCall = parts.find(part => part.functionCall?.name === "create_personal_destination")?.functionCall;
       const openPersonalDestinationCall = parts.find(part => part.functionCall?.name === "open_personal_destination")?.functionCall;
       if (createPersonalDestinationCall) {
         if (!hasExplicitDestinationCreationInstruction(messages)) {
-          return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") +
+          return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") +
             "I can explain how destination generation works, but I won't create a saved workspace unless you explicitly instruct me to create one.";
         }
         const args = createPersonalDestinationCall.args ?? {};
@@ -1211,7 +1211,7 @@ do not invent it.
         const memoryId = String(deleteMemoryCall.args?.memory_id ?? "").trim();
         if (!/^[0-9a-f-]{36}$/i.test(memoryId)) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need the exact saved memory ID from your own memory records before I can delete it.";
         const payload = encodeURIComponent(JSON.stringify({ memoryId }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I am deleting this exact saved Rex memory entry: " + memoryId + ". This deletes only that saved memory entry.\\n\\n[[REX_MEMORY_DELETE_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I am deleting this exact saved Rex memory entry: " + memoryId + ". This deletes only that saved memory entry.\n\n[[REX_MEMORY_DELETE_NOW:" + payload + "]]";
       }
       if (manageSmartFillCall) {
         const action = String(manageSmartFillCall.args?.action ?? "");
@@ -1219,7 +1219,7 @@ do not invent it.
         if (!["save_current_recipients","load_saved_list","export_saved_list","delete_saved_list"].includes(action) || !name) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need a valid Smart Fill operation and exact list name.";
         const payload = encodeURIComponent(JSON.stringify({ action, name }));
         const label = action === "save_current_recipients" ? "save the currently loaded recipient list" : action === "load_saved_list" ? "load the saved Smart Fill list into the active recipient workspace" : action === "export_saved_list" ? "export the saved Smart Fill list" : "delete the saved Smart Fill list";
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I am going to " + label + " named **" + name + "**.\\n\\n[[REX_SMART_FILL_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I am going to " + label + " named **" + name + "**.\n\n[[REX_SMART_FILL_NOW:" + payload + "]]";
       }
       if (createSnippetCall) {
         const title = String(createSnippetCall.args?.title ?? "").trim().slice(0, 120);
@@ -1227,9 +1227,9 @@ do not invent it.
         const body = String(createSnippetCall.args?.body ?? "").trim().slice(0, 4_000);
         const rawCategory = String(createSnippetCall.args?.category ?? "friendly");
         const category = ["direct","friendly","partnership","followup","value"].includes(rawCategory) ? rawCategory : "friendly";
-        if (!title || !subject || !body) return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I need a title, subject and complete message body before saving a Snippet.";
+        if (!title || !body) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need a title, subject and complete message body before saving a Snippet.";
         const payload = encodeURIComponent(JSON.stringify({ title, subject, body, category }));
-        return (reply ? sanitizeAssistantReply(reply) + "\\n\\n" : "") + "I prepared the exact content for your Snippets library. I am saving it as a Snippet—not a Planner item or Campaign Template.\\n\\nTitle: " + title + "\\n\\nSubject: " + subject + "\\n\\n" + body + "\\n\\n[[REX_SNIPPET_CREATE_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I prepared the exact content for your Snippets library. I am saving it as a Snippet—not a Planner item or Campaign Template.\n\nTitle: " + title + "\n\nSubject: " + subject + "\n\n" + body + "\n\n[[REX_SNIPPET_CREATE_NOW:" + payload + "]]";
       }
       if (createPlannerItemCall) {
         const kind = createPlannerItemCall.args?.kind === "Plan" || createPlannerItemCall.args?.kind === "Template" ? createPlannerItemCall.args.kind : "Note";
@@ -1237,7 +1237,7 @@ do not invent it.
         const body = String(createPlannerItemCall.args?.body ?? "").trim().slice(0, 4_000);
         if (!title || !body) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need both a title and content before I can prepare a Planner item.";
         const payload = encodeURIComponent(JSON.stringify({ kind, title, body }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I’m adding this " + kind.toLowerCase() + " to your Planner.\\n\\nTitle: " + title + "\\n\\n" + body + "\\n\\n[[REX_PLANNER_CREATE_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I’m adding this " + kind.toLowerCase() + " to your Planner.\n\nTitle: " + title + "\n\n" + body + "\n\n[[REX_PLANNER_CREATE_NOW:" + payload + "]]";
       }
       if (writeCampaignContentCall) {
         const slot = writeCampaignContentCall.args?.template_slot === "B" ? "B" : "A";
@@ -1246,7 +1246,7 @@ do not invent it.
         if (!body.trim()) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need an email body before I can prepare a template update. A subject is optional when you ask to leave it blank.";
         const payload = encodeURIComponent(JSON.stringify({ slot, subject, body }));
         const subjectDisplay = subject ? "Subject: " + subject + "\n\n" : "";
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I wrote the email content for Template " + slot + ".\n\n" + subjectDisplay + body + "\n\n[[REX_TEMPLATE_WRITE_NOW:" + payload + "]]" + (prepareCall ? "\\n\\n[[REX_PREPARE_CAMPAIGN]]" : "");
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I wrote the email content for Template " + slot + ".\n\n" + subjectDisplay + body + "\n\n[[REX_TEMPLATE_WRITE_NOW:" + payload + "]]" + (prepareCall ? "\n\n[[REX_PREPARE_CAMPAIGN]]" : "");
       }
       if (saveMemoryCall) {
         const category = String(saveMemoryCall.args?.category ?? "context").trim().slice(0, 40);
@@ -1300,7 +1300,7 @@ do not invent it.
         const areas: string[] = [...new Set(requestedAreas)];
         if (!areas.length) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "Tell me which active workspace details you want me to inspect, such as campaign progress, recipients, drafts, sending capacity, or recent activity.";
         const payload = encodeURIComponent(JSON.stringify({ areas }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can inspect these live workspace areas: " + areas.map((area: string) => area.replaceAll("_", " ")).join(", ") + ". This is a read-only inspection of your signed-in workspace. I am checking these areas now.\\n\\n[[REX_ACTIVE_WORKSPACE_READ_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can inspect these live workspace areas: " + areas.map((area: string) => area.replaceAll("_", " ")).join(", ") + ". This is a read-only inspection of your signed-in workspace. I am checking these areas now.\n\n[[REX_ACTIVE_WORKSPACE_READ_NOW:" + payload + "]]";
       }
       if (exportActiveWorkspaceCall) {
         const allowedAreas = new Set(["campaign_summary","recipients","drafts","sending_capacity","campaign_runs","activity","planner","smart_fill_history"]);
@@ -1311,7 +1311,7 @@ do not invent it.
         const format = exportActiveWorkspaceCall.args?.format === "json" ? "json" : "csv";
         if (!areas.length) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "Tell me which live workspace data areas you want exported.";
         const payload = encodeURIComponent(JSON.stringify({ areas, format }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can export these live workspace areas: " + areas.map((area: string) => area.replaceAll("_", " ")).join(", ") + " as " + format.toUpperCase() + ". I am exporting the requested owner-scoped data now.\\n\\n[[REX_ACTIVE_WORKSPACE_EXPORT_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can export these live workspace areas: " + areas.map((area: string) => area.replaceAll("_", " ")).join(", ") + " as " + format.toUpperCase() + ". I am exporting the requested owner-scoped data now.\n\n[[REX_ACTIVE_WORKSPACE_EXPORT_NOW:" + payload + "]]";
       }
       if (exportWorkspaceCall) {
         const domain = String(exportWorkspaceCall.args?.domain ?? "");
@@ -1322,7 +1322,7 @@ do not invent it.
         const allowedDomains = new Set(["campaigns","campaign_recipients","delivery_history","send_events","gmail_profiles","gmail_usage","rex_events","rex_memory"]);
         if (!allowedDomains.has(domain)) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can't export that data category because it is not in my approved workspace data registry.";
         const payload = encodeURIComponent(JSON.stringify({ domain, recordId, limit, format }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can export up to " + limit + " records from your " + domain.replaceAll("_", " ") + " data as " + format.toUpperCase() + ". This is scoped to your signed-in account. I am exporting the requested owner-scoped records now.\\n\\n[[REX_WORKSPACE_EXPORT_NOW:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can export up to " + limit + " records from your " + domain.replaceAll("_", " ") + " data as " + format.toUpperCase() + ". This is scoped to your signed-in account. I am exporting the requested owner-scoped records now.\n\n[[REX_WORKSPACE_EXPORT_NOW:" + payload + "]]";
       }
       if (workspaceReadCall) {
         const domain = String(workspaceReadCall.args?.domain ?? "");
@@ -1350,7 +1350,7 @@ do not invent it.
         const message = String(sendChatCall.args?.message ?? "").trim().slice(0, 4000);
         if (recipient.length < 2 || !message) return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I need an exact connected contact name or @username and the message text before I can prepare it.";
         const payload = encodeURIComponent(JSON.stringify({ recipient, body: message }));
-        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can send this Private Chat message to the exact connected contact **" + recipient + "**. I have not looked up the contact or sent anything yet. Review the exact message and tap Approve & Send to authorize the lookup and send.\\n\\nMessage: " + message + "\\n\\n[[REX_CHAT_APPROVAL:" + payload + "]]";
+        return (reply ? sanitizeAssistantReply(reply) + "\n\n" : "") + "I can send this Private Chat message to the exact connected contact **" + recipient + "**. I have not looked up the contact or sent anything yet. Review the exact message and tap Approve & Send to authorize the lookup and send.\n\nMessage: " + message + "\n\n[[REX_CHAT_APPROVAL:" + payload + "]]";
       }
       if (toolTags.length) return [reply, ...toolTags].filter(Boolean).join("\n\n");
       if (reply) return sanitizeAssistantReply(reply);
