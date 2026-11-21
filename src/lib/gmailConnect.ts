@@ -17,6 +17,8 @@ const FINAL = new Set([
   "no_send_scope",
   "no_identity",
   "limit_reached",
+  "suspended",
+  "banned",
   "declined",
   "no_offline",
   "error",
@@ -80,6 +82,9 @@ function waitForServer(attempt: string) {
 }
 
 function failureMessage(o: Outcome) {
+  // Penalty messages are authored server-side from the current suspension
+  // record; show them verbatim rather than replacing them with a generic error.
+  if ((o.status === "suspended" || o.status === "banned") && o.message) return o.message;
   switch (o.status) {
     case "declined":
       return "You cancelled on Google's screen.";
@@ -90,7 +95,7 @@ function failureMessage(o: Outcome) {
     case "cancelled":
       return "Connection cancelled.";
     default:
-      return o.message ? `Google refused the connection — ${o.message}` : "Google refused the connection.";
+      return o.message ?? "Google refused the connection.";
   }
 }
 
