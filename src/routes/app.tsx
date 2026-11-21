@@ -751,6 +751,7 @@ function Workspace() {
   const [assistOpen, setAssistOpen] = useState(false);
   const [rexInitialPrompt, setRexInitialPrompt] = useState("");
   const [rexStudioOpen, setRexStudioOpen] = useState(false);
+  const [rexStudioInitialSection, setRexStudioInitialSection] = useState<"memory" | undefined>(undefined);
   const [rexStudioReturnToSettings, setRexStudioReturnToSettings] = useState(false);
   const [rexPersonalDestinationId, setRexPersonalDestinationId] = useState<string | null>(null);
   const [rexSearchResources, setRexSearchResources] = useState<{ features: Array<{ id: string; name: string; slug: string; description: string }>; destinations: Array<{ id: string; name: string; description: string }> }>({ features: [], destinations: [] });
@@ -2833,6 +2834,7 @@ function removeCategory(kind: "duplicate" | "risky") {
               setFeatureStudioFilter({});
               setFeatureStudio(p === "smartfill" ? "smartFill" : p);
             } else if (p === "rex-studio" || p === "rex-memory") {
+              setRexStudioInitialSection(p === "rex-memory" ? "memory" : undefined);
               setRexStudioOpen(true);
               if (p === "rex-memory") {
                 window.setTimeout(() => document.querySelector("[data-rex-memory]")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
@@ -5268,7 +5270,8 @@ Please explain this feature and help me with it. Keep this as a discussion first
       {rexStudioOpen && (
         <RexStudio
           uid={uidRef.current ?? "session"}
-          onBack={() => { setRexStudioOpen(false); const back = rexStudioReturnToSettings; setRexStudioReturnToSettings(false); if (back) { setPanel("menu"); setMenuView("settings"); } }}
+          initialSection={rexStudioInitialSection}
+          onBack={() => { setRexStudioOpen(false); setRexStudioInitialSection(undefined); const back = rexStudioReturnToSettings; setRexStudioReturnToSettings(false); if (back) { setPanel("menu"); setMenuView("settings"); } }}
           onOpenChat={(conversationId) => { setRexResumeConversationId(conversationId ?? null); setRexStudioOpen(false); setAssistOpen(true); }}
           onOpenTracker={() => { setRexStudioOpen(false); setFeatureStudioFilter({}); setFeatureStudio("tracker"); }}
         />
