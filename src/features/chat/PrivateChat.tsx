@@ -86,7 +86,7 @@ export function useChatHub(opts: {
   const refresh = useCallback(async (uid: string) => {
     if (pendingReads.current.size) await Promise.allSettled([...pendingReads.current]);
     const [{ data: msgs }, { data: reqs }, { data: hidden }] = await Promise.all([
-      db.from("chat_messages").select("id, connection_id, created_at").is("read_at", null).neq("sender_id", uid).limit(1000),
+      db.from("chat_messages").select("id, connection_id, created_at").is("read_at", null).is("deleted_at", null).neq("sender_id", uid).limit(1000),
       db.from("connection_requests").select("id").eq("receiver_id", uid).eq("status", "pending"),
       db.from("chat_message_hidden").select("message_id"),
     ]);
