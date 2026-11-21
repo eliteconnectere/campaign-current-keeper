@@ -478,10 +478,22 @@ export function EliteAssist({
     return out;
   }
 
+  function messageIsUnapprovedCampaignApproval(content: string): boolean {
+    const marker = content.match(/\[\[APPROVE_CAMPAIGN:([a-z0-9-]+):[^:\]]+:(send|schedule)\]\]/i);
+    if (!marker) return false;
+    if (content.includes("[[CAMPAIGN_APPROVED:" + marker[1] + ":")) return false;
+    try {
+      return !window.localStorage.getItem("rex-approved-campaign:" + marker[1]);
+    } catch {
+      return true;
+    }
+  }
+
   async function runRexCampaignCommand(question: string): Promise<string | null> {
-    const existingApproval = msgs.slice().reverse().find(message =>
-      message.role === "assistant" && message.content.includes("[[APPROVE_CAMPAIGN:")
-    );
+    const latestAssistant = [...msgs].reverse().find(message => message.role === "assistant");
+    const existingApproval = latestAssistant && messageIsUnapprovedCampaignApproval(latestAssistant.content)
+      ? latestAssistant
+      : undefined;
     const shortAffirmation = /^(yes|yeah|yep|ok|okay|approved|go ahead|do it|proceed|confirm|send it)$/i.test(question.trim())
       || isClearSendCommand(question);
     if (existingApproval && shortAffirmation) return "[[TYPED_APPROVE_CAMPAIGN]]";
@@ -1014,11 +1026,28 @@ export function EliteAssist({
         }
       }
 
+      if (isRecipientPaste) {
+        // User turn was saved above in redacted form.
+        await stageRecipientImport(content, "Pasted into Rex chat", false, true);
+        const stagedAssistantTurn = "Staged **" + pastedEmails.length.toLocaleString() + " recipients** privately (list hidden in chat — open Recipients to see them). Agree the message, then say **OK send** — I will import, validate, and show Approve. Nothing has been sent.";
+        next.push({ role: "assistant", content: stagedAssistantTurn });
+        const remainingInstruction = safeInstruction
+          .replace(/\[recipient email\]/gi, "")
+          .replace(/\b(?:here are|these are|the following are|my|the|a|an|list of|email|emails|addresses|address|contacts|recipients|recipient list|contact list|list|below|please|kindly)\b/gi, "")
+          .replace(/[^a-z0-9]/gi, "");
+        if (!remainingInstruction && !isClearSend) return;
+      }
+      const latestAssistantBeforeCommand = [...msgs].reverse().find(message => message.role === "assistant");
+      const hasActiveChatOrHotspotApproval = Boolean(latestAssistantBeforeCommand &&
+        /\[\[REX_CHAT_APPROVAL:[^\]]+\]\]|\[\[REX_HOTSPOT_INVITE_APPROVAL:[^\]]+\]\]/.test(latestAssistantBeforeCommand.content));
+      const isClearSend = !hasActiveChatOrHotspotApproval && isClearSendCommand(content);
+
       // SEND COMMAND: import staged list, prepare workspace campaign, show Approve. No Gemini rewrite. No validate gate.
-      if (isClearSendCommand(content)) {
-        const existingApproval = [...msgs].reverse().find(message =>
-          message.role === "assistant" && message.content.includes("[[APPROVE_CAMPAIGN:")
-        );
+      if (isClearSend) {
+        const latestAssistant = [...msgs].reverse().find(message => message.role === "assistant");
+        const existingApproval = latestAssistant && messageIsUnapprovedCampaignApproval(latestAssistant.content)
+          ? latestAssistant
+          : undefined;
         if (existingApproval) {
           const match = existingApproval.content.match(/\[\[APPROVE_CAMPAIGN:([a-z0-9-]+):([^:\]]+):(send|schedule)\]\]/i);
           if (match) {
@@ -1082,17 +1111,6 @@ export function EliteAssist({
         }
       }
 
-      if (isRecipientPaste) {
-        // User turn was saved above in redacted form.
-        await stageRecipientImport(content, "Pasted into Rex chat", false, true);
-        const stagedAssistantTurn = "Staged **" + pastedEmails.length.toLocaleString() + " recipients** privately (list hidden in chat — open Recipients to see them). Agree the message, then say **OK send** — I will import, validate, and show Approve. Nothing has been sent.";
-        next.push({ role: "assistant", content: stagedAssistantTurn });
-        const remainingInstruction = safeInstruction
-          .replace(/\[recipient email\]/gi, "")
-          .replace(/\b(?:here are|these are|the following are|my|the|a|an|list of|email|emails|addresses|address|contacts|recipients|recipient list|contact list|list|below|please|kindly)\b/gi, "")
-          .replace(/[^a-z0-9]/gi, "");
-        if (!remainingInstruction) return;
-      }
       if (pendingImport && /\b(cancel|discard)\b/i.test(content)) {
         cancelRecipientImport();
         const reply = "The staged recipient file was discarded. Nothing was imported.";
