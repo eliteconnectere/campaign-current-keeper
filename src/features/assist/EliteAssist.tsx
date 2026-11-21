@@ -313,8 +313,8 @@ export function EliteAssist({
         : message));
       const details = result.records.map((record: any) =>
         "[" + new Date(record.at).toLocaleString() + "] " + record.contact + " — " + record.direction + ": " + record.message
-      ).join("\\n");
-      const reply = result.message || (details ? "Here are your Private Chat messages:\\n\\n" + details : "No Private Chat messages were found.");
+      ).join("\n");
+      const reply = result.message || (details ? "Here are your Private Chat messages:\n\n" + details : "No Private Chat messages were found.");
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
       await persistMessage("assistant", reply);
       toast.success("Private Chat history loaded.");
@@ -337,7 +337,7 @@ export function EliteAssist({
     } else {
       const keys = [...new Set(rows.flatMap((row: any) => row && typeof row === "object" ? Object.keys(row) : ["value"]))];
       const quote = (cell: unknown) => '"' + String(cell ?? "").replace(/"/g, '""') + '"';
-      content = [keys.map(quote).join(","), ...rows.map((row: any) => keys.map(key => quote(row?.[key])).join(","))].join("\\r\\n");
+      content = [keys.map(quote).join(","), ...rows.map((row: any) => keys.map(key => quote(row?.[key])).join(","))].join("\\r\n");
       mime = "text/csv";
     }
     const blob = new Blob([content], { type: mime + ";charset=utf-8" });
@@ -356,7 +356,7 @@ export function EliteAssist({
     setBusy(true);
     try {
       const result = await readRexWorkspaceData({ data: { domain: payload["domain"], ...(payload["recordId"] ? { recordId: payload["recordId"] } : {}), ...(payload["limit"] !== undefined ? { limit: payload["limit"] } : {}) } });
-      const reply = "Here are your " + result.domain.replaceAll("_", " ") + " records (" + result.count + "):\\n\\n" +
+      const reply = "Here are your " + result.domain.replaceAll("_", " ") + " records (" + result.count + "):\n\n" +
         JSON.stringify(result.records, null, 2).slice(0, 18_000);
       setMsgs(current => [...current, { role: "assistant", content: reply }]);
       await persistMessage("assistant", reply);
@@ -372,7 +372,7 @@ export function EliteAssist({
     setBusy(true);
     try {
       const result = await onReadActiveWorkspace(areas);
-      const reply = "I checked your live workspace for: " + areas.join(", ") + ".\\n\\n" + JSON.stringify(result, null, 2).slice(0, 18_000);
+      const reply = "I checked your live workspace for: " + areas.join(", ") + ".\n\n" + JSON.stringify(result, null, 2).slice(0, 18_000);
       setMsgs(current => [...current, { role: "assistant", content: reply }]); await persistMessage("assistant", reply);
     } catch (error) {
       const reply = error instanceof Error ? error.message : "I could not inspect the live workspace.";
@@ -809,10 +809,10 @@ export function EliteAssist({
   }
 
   async function stageCampaignDraftUpload(raw: string, fileName: string) {
-    const draft = String(raw ?? "").replace(/\\u0000/g, "").trim();
+    const draft = String(raw ?? "").replace(/\u0000/g, "").trim();
     if (!draft) throw new Error("This campaign draft file is empty.");
     if (draft.length > 80_000) throw new Error("Campaign draft files must be 80 KB or smaller.");
-    setText("Please review this uploaded campaign draft from " + fileName + " and help me prepare it. Nothing has been sent.\\n\\n" + draft);
+    setText("Please review this uploaded campaign draft from " + fileName + " and help me prepare it. Nothing has been sent.\n\n" + draft);
     toast.success("Campaign draft loaded into Rex. Review it and press Send when ready.");
   }
 
@@ -1753,7 +1753,7 @@ export function EliteAssist({
     // so capability explanations, suggestions, and accidental markers cannot move
     // the user to another screen.
     const latestUserMessage = [...msgs].reverse().find((message) => message.role === "user");
-    const explicitNavigationRequest = Boolean(latestUserMessage && /\b(?:open|go to|take me to|bring me to|navigate to|land on|switch to|show me)\\b/i.test(latestUserMessage.content) && !/\bshow me how\\b/i.test(latestUserMessage.content));
+    const explicitNavigationRequest = Boolean(latestUserMessage && /\b(?:open|go to|take me to|bring me to|navigate to|land on|switch to|show me)\b/i.test(latestUserMessage.content) && !/\bshow me how\b/i.test(latestUserMessage.content));
     if (!explicitNavigationRequest) return;
     const start = last.content.indexOf("[[GO:");
     if (start < 0) return;
@@ -2182,7 +2182,9 @@ function AssistantReply({
   const [alreadyApproved] = useState(() => { const id = campaignApproval?.[1]; if (!id || typeof window === "undefined") return false; try { return Boolean(window.localStorage.getItem("rex-approved-campaign:" + id)); } catch { return false; } });
   const text = content
     .replace(/\[\[(SHOW|GO|SUGGEST|APPROVE_CAMPAIGN|CAMPAIGN_APPROVED|REX_APPROVAL|REX_APPROVED|REX_EXPIRED|REX_ACTION_DONE|REX_CHAT_APPROVAL|REX_CHAT_READ_APPROVAL|REX_WORKSPACE_READ_APPROVAL|REX_WORKSPACE_EXPORT_APPROVAL|REX_ACTIVE_WORKSPACE_READ_APPROVAL|REX_ACTIVE_WORKSPACE_EXPORT_APPROVAL|REX_IMPORT_APPROVAL|REX_TEMPLATE_WRITE_APPROVAL|REX_SETTING_UPDATE_APPROVAL|REX_PLANNER_CREATE_APPROVAL|REX_SMART_FILL_APPROVAL|REX_MEMORY_DELETE_APPROVAL|REX_MEMORY_SAVE_APPROVAL|REX_LOGOUT_APPROVAL|REX_LOGOUT_CANCELLED|REX_LOGOUT_DONE|REX_LOGOUT_EXPIRED):[^\]]*\]\]/gi, "")
-    .replace(/\[\[(?:REX_LOGOUT_APPROVAL|REX_LOGOUT_CANCELLED|REX_LOGOUT_DONE|REX_LOGOUT_EXPIRED)\]\]/gi, "")
+    .replace(/\[\[(?:REX_LOGOUT_APPROVAL|REX_LOGOUT_CANCELLED|REX_LOGOUT_DONE|REX_LOGOUT_EXPIRED)\]\]/gi, "")    .replace(/\\[\\[REX_HOTSPOT_INVITE_APPROVAL:[^\\]]*\\]\\]/gi, "")
+    .replace(/\\[\\[REX_HOTSPOT_INVITE_DONE\\]\\]/gi, "")
+
     .replace(/\[\[DESTINATION_LABEL:[^\]]*\]\]/gi, "")
     .replace(/\[\[REX_CHAT_SENT\]\]/gi, "")
     .replace(/\[\[REX_CHAT_READ_DONE\]\]/gi, "")
