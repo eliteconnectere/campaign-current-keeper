@@ -1669,6 +1669,7 @@ function Workspace() {
     setCleanupHandled(false);
     // Clear client-side send locks so a new campaign (new body/subject) can run.
     // Server Permanent Send Protection still blocks the EXACT same message only.
+    claimedRef.current.clear();
     sentRecipientEmailsRef.current = new Set();
     setSentRecipientEmails([]);
   }
@@ -2398,13 +2399,21 @@ function removeCategory(kind: "duplicate" | "risky") {
       return false;
     }
 
-    // Rebuild the execution preview from the current editor values. This ensures
-    // messages typed or imported from Snippets after validation are not stale.
+    // Auto-quarantine excluded rows before constructing the execution dataset.
+    if (!cleanupHandled && (counts.duplicate > 0 || counts.risky > 0)) {
+      removeStatuses(["duplicate", "risky"]);
+      setCleanupHandled(true);
+      toast.info(
+        `Saved ${counts.risky + counts.duplicate} risky/duplicate lead(s) to Vault. Sending safe contacts on Elite…`,
+      );
+    }
+    const effectiveRecipients = recipients.filter((r) => r.status !== "duplicate" && r.status !== "risky");
+    // Rebuild from current editor values using only eligible rows.
     const previouslySent = new Set([
       ...generatedRef.current.filter((g) => g.sent).map((g) => g.email.trim().toLowerCase()),
       ...sentRecipientEmailsRef.current,
     ]);
-    const currentGenerated = buildGenerated(recipients).map((g) => ({
+    const currentGenerated = buildGenerated(effectiveRecipients).map((g) => ({
       ...g,
       sent: previouslySent.has(g.email.trim().toLowerCase()),
     }));
@@ -2443,17 +2452,6 @@ function removeCategory(kind: "duplicate" | "risky") {
       );
       return false;
     }
-    if (!cleanupHandled && (counts.duplicate > 0 || counts.risky > 0)) {
-      // Auto-quarantine bad rows and start Elite on safe contacts — no popup at send start
-      removeStatuses(["duplicate", "risky"]);
-      setCleanupHandled(true);
-      if (counts.risky > 0 || counts.duplicate > 0) {
-        toast.info(
-          `Saved ${counts.risky + counts.duplicate} risky/duplicate lead(s) to Vault. Sending safe contacts on Elite…`
-        );
-      }
-    }
-
     // Clear reasons when campaign cannot start
     // Only the current generated list "sent" flags block a continue.
     // Lifetime history is for stats — Reset clears it. Server still dedupes exact same message.
