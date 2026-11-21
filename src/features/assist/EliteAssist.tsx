@@ -1481,7 +1481,7 @@ export function EliteAssist({
           }
           onApplyCampaignTemplate(slot, subject, body);
 
-          const wantsSend = typeof isClearSendCommand === 'function' ? isClearSendCommand(content) : isClearSendCommand(content);
+          const wantsSend = isClearSend;
           if (!wantsSend) {
             const applied = rawReply.replace(templateWriteNow[0], "").replace("[[REX_PREPARE_CAMPAIGN]]", "").trim();
             const visible = (applied || ("Applied the message to Template " + slot + ".")) +
@@ -1675,7 +1675,7 @@ export function EliteAssist({
               "\n\nNothing has been sent. Review this exact message and tell me what you want changed.";
             // A future/conditional statement about approval is not a send command.
             // Only an explicit send/execution instruction may produce the final control.
-            const explicitlyRequestsSend = isClearSendCommand(content);
+            const explicitlyRequestsSend = isClearSend;
             if (explicitlyRequestsSend) {
               const campaignId = "engine-approval-" + crypto.randomUUID();
               engineSessionApprovalIds.current.add(campaignId);
