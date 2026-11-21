@@ -84,7 +84,7 @@ export const Route = createFileRoute("/api/public/gmail/callback")({
           }
           const { data: u } = await supabaseAdmin.auth.admin.getUserById(row.user_id);
           const out = await storeConnection(row.user_id, u.user?.email ?? undefined, refreshToken, scope, state);
-          await finish(out.reason, out.email, null);
+          await finish(out.reason, out.email, out.reason === "banned" || out.reason === "suspended" ? out.message ?? null : null);
           if (out.ok) {
             return page(
               "Gmail profile connected",
