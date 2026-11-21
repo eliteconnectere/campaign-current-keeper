@@ -36,6 +36,19 @@ export async function storeConnection(
   const email = await google.emailFor(token);
   if (!email) return { ok: false, reason: "no_identity", email: null };
 
+  const { connectGate, suspensionMessage } = await import("@/server/gmailPenalties.server");
+  const gate = await connectGate(email.trim().toLowerCase());
+  if (!gate.ok) {
+    return {
+      ok: false,
+      reason: gate.banned ? "banned" : "suspended",
+      email,
+      message: gate.banned
+        ? "This Gmail address is permanently blocked from Elite Engine due to repeated Google flags. Standard Mode remains available."
+        : suspensionMessage(gate.remainingMs, gate.suspensionDays),
+    };
+  }
+
   const ent = await entitlementsFor(await ensureBilling(userId), masterEmail);
   const rows = await listProfileRows(userId, CONNECTOR_ID);
   const isNew = !rows.some((r) => r.email_key === email.trim().toLowerCase());
