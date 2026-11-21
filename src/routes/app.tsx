@@ -2997,6 +2997,7 @@ function removeCategory(kind: "duplicate" | "risky") {
                       <MenuRow
                         icon={Settings}
                         label="Settings"
+                        dataAttr="data-tour-settings-entry"
                         sub="Customization, sounds, protection, hotspot & account"
                         onClick={() => setMenuView("settings")}
                       />
@@ -3738,7 +3739,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
         {/* recipients */}
         <Card innerRef={recipientsRef} highlight={guide?.target === "recipients"}>
           <div className="flex items-center justify-between gap-2">
-            <h2 data-ec-recipients className="flex items-center gap-1.5 text-[14px] font-semibold text-ink">
+            <h2 data-tour="recipients" data-ec-recipients className="flex items-center gap-1.5 text-[14px] font-semibold text-ink">
               <Mail className="size-4 text-brand" /> Recipients Email
             </h2>
             {!validated && (
@@ -3980,7 +3981,7 @@ Sending delays start at 3 seconds to account for Gmail delivery time.
               ) : (
                 <>
                   <button
-      data-tour={status === "ACTIVE" ? "active-profile" : "profile-row"}
+      data-tour={current && !current.exhausted ? "active-profile" : "profile-row"}
                     onClick={() => setSelectorOpen((o) => !o)}
                     aria-expanded={selectorOpen}
                     className="mt-2 flex w-full items-center gap-2 rounded-2xl bg-soft px-3 py-2 text-left"
@@ -4965,8 +4966,8 @@ We recommend a <b className="text-ink">5-second delay</b> between emails. Choose
             {delay < 3 && (
               <button
                 onClick={() => {
-setDelay(5);
-  delayRef.current = 5;
+setDelay(3);
+                  delayRef.current = 3;
                   oneSecOkRef.current = true;
                   setOneSecAsk(false);
                   startCampaign(true);
@@ -5285,6 +5286,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
           resumeConversationId={rexResumeConversationId}
           onPrepareCampaign={prepareCurrentCampaignForRex}
           onExecuteCurrentCampaign={async () => {
+            rangeConfirmedRef.current = true;
             const started = await startCampaign(true);
             if (started) setFeatureStudio("tracker");
             return started;
@@ -5361,7 +5363,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
             if (action === "load_saved_list") {
               const saved = smartFillHistory[existingIndex];
               if (!saved?.emails?.trim()) return false;
-              const csv = "email\\n" + saved.emails.split(/\\r?\\n/).filter(Boolean).join("\\n");
+              const csv = "email\n" + saved.emails.split(/\r?\n/).filter(Boolean).join("\n");
               return importRecipientsIntoWorkspace(csv, "Smart Fill list " + saved.name);
             }
             if (action === "delete_saved_list") {
