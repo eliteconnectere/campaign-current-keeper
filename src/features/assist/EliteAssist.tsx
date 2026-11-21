@@ -275,7 +275,7 @@ export function EliteAssist({
       } });
       approvalId = receipt.approval.id;
       const authorized = (await consumeRexOperationApproval({ data: { approvalId } })) as Record<string, any>;
-      const planSteps: any[] = Array.isArray(authorized?.plan) ? authorized.plan : [];
+      const planSteps: any[] = Array.isArray(authorized?.["plan"]) ? authorized["plan"] : [];
       const approvedStep = planSteps.find((step: any) =>
         step?.action === "send_private_chat" && step?.scope?.recipient === recipient && step?.scope?.body === body
       );
