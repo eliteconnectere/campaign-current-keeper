@@ -414,10 +414,11 @@ export const sendGmailMessage = createServerFn({ method: "POST" })
           console.error("Could not persist Google's Gmail quota cooldown", cooldownError);
         }
       }
+      let penaltyOutcome: { banned: boolean; suspensionDays: number } | null = null;
       if (!isQuota) {
         try {
           const { flagAccount } = await import("@/server/gmailPenalties.server");
-          await flagAccount(preferred.email_key);
+          penaltyOutcome = await flagAccount(preferred.email_key);
         } catch (e) {
           console.error("flagAccount trigger error", e);
         }
@@ -428,7 +429,9 @@ export const sendGmailMessage = createServerFn({ method: "POST" })
         profileId: preferred.id,
         message: isQuota
           ? "Gmail daily sending quota or rate limit exceeded for this profile."
-          : `Gmail account ${preferred.account_email} was flagged by Google and disconnected. It is suspended from Elite Engine for 5 days.`,
+          : penaltyOutcome?.banned
+            ? `Gmail account ${preferred.account_email} was permanently blocked from Elite Engine due to repeated Google flags. Standard Mode remains available.`
+            : `Gmail account ${preferred.account_email} was flagged by Google and suspended from Elite Engine for ${penaltyOutcome?.suspensionDays ?? 5} days. Standard Mode remains available.`,
         profiles: await listProfileViews(context.userId, CONNECTOR_ID),
       };
     }
