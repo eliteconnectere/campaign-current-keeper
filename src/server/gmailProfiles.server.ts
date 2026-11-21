@@ -26,6 +26,8 @@ export type ProfileRow = {
 
 const PROFILE_COLUMNS =
   "id, account_email, email_key, connection_key_ciphertext, position, slot, gateway_identity";
+const USAGE_COLUMNS =
+  "email_key, daily_limit, sent_count, sent_date, exhausted_until, window_started_at";
 
 export type ProfileView = {
   id: string;
@@ -102,7 +104,7 @@ export async function batchEnsureIdentityUsage(emailKeys: string[]): Promise<Map
     // another request created the same identity concurrently.
     const { data: insertedOrExisting, error: refreshError } = await db
       .from("gmail_identity_usage")
-      .select(columns)
+      .select(USAGE_COLUMNS)
       .in("email_key", missingKeys);
     if (refreshError) throw refreshError;
     for (const row of insertedOrExisting ?? []) map.set(row.email_key, row as IdentityUsage);
