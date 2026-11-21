@@ -119,17 +119,42 @@ function base64Url(value: string) {
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+const UNSUBSCRIBE_FOOTER_HTML = [
+  "<br><br>",
+  '<hr style="border: none; border-top: 1px solid #eaeaea; margin: 20px 0;">',
+  '<div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid #eeeeee; text-align: center; font-size: 12px; color: #777777; font-family: sans-serif;">',
+  "  You received this email because your address is subscribed to communications via Elite Connectere.<br>",
+  '  If you no longer wish to receive these emails, you can <a href="https://eliteconnectere.site/unsubscribe" style="color: #0066cc; text-decoration: underline;">unsubscribe here</a>.',
+  "</div>",
+].join("\n");
+
+function b64Utf8(value: string) {
+  return btoa(Array.from(new TextEncoder().encode(value), (byte) => String.fromCharCode(byte)).join(""));
+}
+function encodeSubject(value: string) {
+  const clean = value.replace(/[\r\n]/g, " ").slice(0, 500);
+  return /^[\x00-\x7F]*$/.test(clean) ? clean : "=?UTF-8?B?" + b64Utf8(clean) + "?=";
+}
 function rawEmail(to: string, subject: string, body: string) {
+  const source = body.slice(0, 20_000);
+  const fullBody = /eliteconnectere\.site\/unsubscribe/i.test(source) && /unsubscribe/i.test(source)
+    ? source
+    : source + (source.endsWith("\n") || source.endsWith(">") ? "" : "\n") + UNSUBSCRIBE_FOOTER_HTML;
+  const looksHtml = /<[a-z][\s\S]*>/i.test(source);
+  const htmlBody = looksHtml
+    ? fullBody
+    : fullBody.split(UNSUBSCRIBE_FOOTER_HTML)[0]!
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/\n/g, "<br>\n") + UNSUBSCRIBE_FOOTER_HTML;
   return base64Url([
-    `To: ${to}`,
-    ...(subject.trim() ? [`Subject: ${subject.replace(/[\r\n]/g, " ").slice(0, 500)}`] : []),
+    "To: " + to,
+    ...(subject.trim() ? ["Subject: " + encodeSubject(subject)] : []),
     "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Type: text/html; charset="UTF-8"',
     "",
-    body.slice(0, 20_000),
+    htmlBody,
   ].join("\r\n"));
 }
-
 async function bodyHash(body: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -340,7 +365,12 @@ async function processCampaigns(onlyCampaignId?: string) {
     // Claim one recipient at a time with SKIP LOCKED. This lets multiple worker
     // instances safely share a campaign without double-claiming, and avoids
     // leaving a batch marked "sending" if this invocation reaches its time budget.
-    while (campaignProcessed < MAX_PER_CAMPAIGN_RUN && Date.now() - workerStartedAt < WORKER_BUDGET_MS - paceMs) {
+    while (
+      campaignProcessed < MAX_PER_CAMPAIGN_RUN &&
+      (campaignProcessed === 0
+        ? Date.now() - workerStartedAt < WORKER_BUDGET_MS - 1500
+        : Date.now() - workerStartedAt < WORKER_BUDGET_MS - paceMs - 1000)
+    ) {
       // Respect a Studio pause/stop immediately between recipient sends. A worker
       // already in flight must not overwrite the owner's control state afterward.
       const { data: controlState } = await (supabaseAdmin as any).from("campaigns")
@@ -465,7 +495,10 @@ async function processCampaigns(onlyCampaignId?: string) {
           updated_at: new Date().toISOString(),
         }).eq("id", recipient.id);
       }
-      if (!campaignPausedForRisk) await new Promise((resolve) => setTimeout(resolve, paceMs));
+      if (!campaignPausedForRisk) {
+        if (Date.now() - workerStartedAt + paceMs >= WORKER_BUDGET_MS - 1000) break;
+        await new Promise((resolve) => setTimeout(resolve, paceMs));
+      }
     }
 
     const [{ count: remaining }, { count: failed }, { count: sent }] = await Promise.all([
