@@ -84,7 +84,7 @@ function waitForServer(attempt: string) {
 function failureMessage(o: Outcome) {
   // Penalty messages are authored server-side from the current suspension
   // record; show them verbatim rather than replacing them with a generic error.
-  if ((o.status === "suspended" || o.status === "banned") && o.message) return o.message;
+  if (o.status === "banned" || o.status === "suspended") return o.message || "This Gmail is currently restricted from Elite Engine.";
   switch (o.status) {
     case "declined":
       return "You cancelled on Google's screen.";
