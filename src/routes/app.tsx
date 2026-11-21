@@ -5482,7 +5482,7 @@ Please explain this feature and help me with it. Keep this as a discussion first
             sent: sentCount,
             quarantined: quarantineVault.length,
             remaining: Math.max(0, generated.length - sentCount),
-            gmailProfiles: profiles.map((pr: any) => `${pr?.email ?? "gmail"} · ${pr?.status ?? "?"} · sent ${pr?.sent ?? pr?.sentToday ?? 0}/${pr?.limit ?? pr?.dailyLimit ?? "?"}`),
+            gmailProfiles: profiles.map((pr: any) => `${pr?.email ?? "gmail"} · ${statusOf(pr)} · sent ${pr?.used ?? 0}/${pr?.limit ?? "?"}`),
             recentActivity: notes.slice(0, 12),
             campaignContext: JSON.stringify({
               workspaceOwner: "current signed-in user only",
