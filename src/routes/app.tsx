@@ -1925,23 +1925,6 @@ function removeCategory(kind: "duplicate" | "risky") {
         setScout(false);
         setEngine("idle");
         finishCampaignRun("completed");
-        // After Elite finishes the safe list, offer Standard Mode only if Vault still has leads
-        try {
-          const vaultLen = (typeof quarantineVault !== "undefined" && Array.isArray(quarantineVault))
-            ? quarantineVault.length
-            : 0;
-          if (vaultLen > 0 && (mode as string) === "elite") {
-            toast.message(`Elite finished. ${vaultLen} lead(s) remain in Quarantine Vault.`, {
-              action: {
-                label: "Send via Standard",
-                onClick: () => {
-                  if (typeof sendRiskyViaStandard === "function") sendRiskyViaStandard();
-                },
-              },
-              duration: 12000,
-            });
-          }
-        } catch {}
         return;
       }
       const url = `googlegmail://co?to=${encodeURIComponent(next.email)}&subject=${encodeURIComponent(
@@ -1991,6 +1974,16 @@ function removeCategory(kind: "duplicate" | "risky") {
         const finished = /finished|complete/i.test(msg);
         finishCampaignRun(finished ? "completed" : /paused/i.test(msg) ? "paused" : "failed");
         log(msg, finished ? "campaignCompleted" : "campaignPaused");
+        if (finished && quarantineVault.length > 0) {
+          const vaultLen = quarantineVault.length;
+          toast.message(`Elite finished. ${vaultLen} lead(s) remain in Quarantine Vault.`, {
+            action: {
+              label: "Send via Standard",
+              onClick: () => sendRiskyViaStandard(),
+            },
+            duration: 12000,
+          });
+        }
       }
     };
 
